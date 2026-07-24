@@ -17,6 +17,7 @@
 import { useState } from 'react';
 import { wizardInferFields, TenantStudioError } from '../client';
 import { PipelineRow, PipelineField } from '../yaml';
+import SelectorPicker from './SelectorPicker';
 
 const METHODS = ['text', 'html', 'attr:href', 'attr:src', 'attr:title'];
 
@@ -34,6 +35,8 @@ export default function FieldEditor({
   const [inferUrl, setInferUrl] = useState('');
   const [inferring, setInferring] = useState(false);
   const [inferMsg, setInferMsg] = useState<string | null>(null);
+  // Which field row (if any) is currently picking a selector via the visual picker.
+  const [pickingIdx, setPickingIdx] = useState<number | null>(null);
 
   const set = (next: PipelineField[]) => onChange(next);
 
@@ -91,12 +94,22 @@ export default function FieldEditor({
 
       {fields.map((f, i) => (
         <div key={i} className="grid grid-cols-[1fr_1fr_auto_auto] gap-1.5 items-center">
-          <input
-            value={f.selector}
-            onChange={(e) => updateField(i, 'selector', e.target.value)}
-            placeholder="CSS selector"
-            className="rounded border border-slate-200 px-2 py-1 text-xs font-mono"
-          />
+          <div className="flex items-center gap-1">
+            <input
+              value={f.selector}
+              onChange={(e) => updateField(i, 'selector', e.target.value)}
+              placeholder="CSS selector"
+              className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+            />
+            <button
+              type="button"
+              title="Pick visually — click the element on a live page"
+              onClick={() => setPickingIdx(i)}
+              className="shrink-0 rounded border border-blue-200 px-1.5 py-1 text-xs hover:bg-blue-50"
+            >
+              🎯
+            </button>
+          </div>
           <input
             value={f.as || ''}
             onChange={(e) => updateField(i, 'as', e.target.value)}
@@ -125,6 +138,17 @@ export default function FieldEditor({
       ))}
 
       <button onClick={addField} className="text-xs text-blue-600 hover:underline">+ add field</button>
+
+      {pickingIdx !== null && (
+        <SelectorPicker
+          initialUrl={inferUrl}
+          onPick={(r) => {
+            updateField(pickingIdx, 'selector', r.selector);
+            setInferMsg(`Picked: ${r.selector}${r.matches != null ? ` (${r.matches} matches)` : ''}`);
+          }}
+          onClose={() => setPickingIdx(null)}
+        />
+      )}
     </div>
   );
 }

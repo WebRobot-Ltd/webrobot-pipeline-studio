@@ -15,3 +15,4 @@ export { default as BuildWizard } from './components/BuildWizard';
 export { default as FieldEditor } from './components/FieldEditor';
 export { default as OddsMarketsEditor } from './components/OddsMarketsEditor';
 export { default as PythonExtensionsEditor } from './components/PythonExtensionsEditor';
+export { default as SelectorPicker } from './components/SelectorPicker';
