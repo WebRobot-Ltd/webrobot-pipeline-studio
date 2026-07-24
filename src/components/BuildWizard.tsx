@@ -12,7 +12,7 @@
  * This covers the manual/structured flow. The selector-inference sub-wizard (infer-fields,
  * live picker, CMF preview) plugs into the same wizPipeline rows and is ported separately.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   getStageCatalog,
   saveGeneratedPipeline,
@@ -38,7 +38,12 @@ interface CatalogStage extends StageSpec {
 
 type TargetSource = number | 'shared';
 
-export default function BuildWizard() {
+/**
+ * @param chatSlot optional "design with chat" panel injected by the host — the SAME slot the
+ *   agentic studio uses (DesignWithChat is generic; only the context differs, ETL vs agentic).
+ *   The package bundles no chat component; the host passes one.
+ */
+export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {}) {
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
@@ -155,6 +160,7 @@ export default function BuildWizard() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
       {/* Catalogue */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
