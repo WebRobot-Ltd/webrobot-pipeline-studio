@@ -26,7 +26,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test test/"
+    "test": "npm run build && node --test test/",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "react": ">=18"
