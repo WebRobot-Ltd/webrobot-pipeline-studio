@@ -29,7 +29,15 @@ import { WizRuntime } from '../types';
 import FieldEditor from './FieldEditor';
 import OddsMarketsEditor from './OddsMarketsEditor';
 import PythonExtensionsEditor from './PythonExtensionsEditor';
-import { OddsMarket, PyExtension } from '../yaml';
+import { OddsMarket, PyExtension, TraceAction } from '../yaml';
+import SelectorPicker, {
+  type PickField,
+  type PickResult,
+  type PickerAction,
+  type MarketBoxPick,
+  type MacroBoxPick,
+  type PickerMode,
+} from './SelectorPicker';
 
 interface CatalogStage extends StageSpec {
   category?: string;
@@ -37,6 +45,9 @@ interface CatalogStage extends StageSpec {
 }
 
 type TargetSource = number | 'shared';
+
+/** Stages that carry a source URL — used to seed the visual picker's mirror. */
+const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
 
 /**
  * @param chatSlot optional "design with chat" panel injected by the host — the SAME slot the
@@ -107,6 +118,52 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
     setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _markets: markets } : r)));
   };
 
+  // ── Visual selector picker wiring ──────────────────────────────────────────
+  // The picker (ported 1:1 from the Vue studio) is launched per-row; its callbacks
+  // write straight into the same row fields the YAML serializer reads (_fields,
+  // _markets, _trace, _requires_hitl, _anti_bot_kind). No host coupling: the picker
+  // talks to the tenant backend through the injected client.
+  const [pickerFor, setPickerFor] = useState<number | null>(null);
+
+  const patchRow = (idx: number, patch: Partial<PipelineRow>) =>
+    setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  const pickFieldToPF = (f: PickField): PipelineField => ({
+    selector: f.selector, as: f.as, method: f.method, _parallel: f._parallel,
+  });
+  const pfToPickField = (f: PipelineField): PickField => ({
+    selector: f.selector, as: f.as || '', method: f.method || 'text', _parallel: f._parallel,
+  });
+
+  // Source URL for a row = the fetch-like stage's url in the SAME source group
+  // (multi-source), falling back to the first fetch-like url anywhere.
+  const sourceUrlFor = (idx: number): string => {
+    const row = pipeline[idx];
+    const urlOf = (r: PipelineRow) => r?.args?.url || r?.args?.startUrl || r?.args?.startUrls || '';
+    const sameSrc = pipeline.filter(
+      (r) => FETCH_STAGES.has(r.stage) && srcKey(r) === srcKey(row) && urlOf(r));
+    if (sameSrc.length) return String(urlOf(sameSrc[0]));
+    const any = pipeline.find((r) => FETCH_STAGES.has(r.stage) && urlOf(r));
+    return any ? String(urlOf(any)) : '';
+  };
+
+  const pickerModeFor = (row: PipelineRow): PickerMode => {
+    if (row.stage === 'oddsSelect' || row.stage === 'odds_select') return 'market-box';
+    return 'multi-field';
+  };
+
+  // Navigation trace + anti-bot are properties of the FETCH-like stage (the serializer only
+  // emits _trace/requires_hitl there), not the picked extract row. Route them to the fetch
+  // row in the same source group; fall back to the picked row if there's none.
+  const fetchRowIndexFor = (pIdx: number): number => {
+    const row = pipeline[pIdx];
+    const inSrc = pipeline.findIndex(
+      (r) => FETCH_STAGES.has(r.stage) && srcKey(r) === srcKey(row));
+    if (inSrc >= 0) return inSrc;
+    const anyIdx = pipeline.findIndex((r) => FETCH_STAGES.has(r.stage));
+    return anyIdx >= 0 ? anyIdx : pIdx;
+  };
+
   const multiSource = pipeline.some(
     (r) => r._src === 'shared' || (typeof r._src === 'number' && r._src > 1));
 
@@ -124,7 +181,11 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
   }, [catalog, filter]);
 
   const yaml = useMemo(
-    () => buildYamlFromPipeline(pipeline, { catalog, runtime, geo, pythonExtensions: pyExts }),
+    () => buildYamlFromPipeline(pipeline, {
+      catalog, runtime, geo, pythonExtensions: pyExts,
+      // Any anti-bot row detected by the picker → emit metadata.requires_hitl.
+      hitlAwait: pipeline.some((r) => r && r._requires_hitl),
+    }),
     [pipeline, catalog, runtime, geo, pyExts]);
 
   const findSpec = (name: string) =>
@@ -252,6 +313,29 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
                         />
                       </div>
                     )}
+                    <div className="flex items-center gap-2 mb-1">
+                      <button
+                        onClick={() => setPickerFor(idx)}
+                        className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50">
+                        🎯 Pick visually
+                      </button>
+                      {(() => {
+                        const fr = pipeline[fetchRowIndexFor(idx)];
+                        return (
+                          <>
+                            {fr?._requires_hitl && (
+                              <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-700"
+                                title={fr._anti_bot_kind || 'anti-bot'}>requires HITL</span>
+                            )}
+                            {fr?._trace?.length ? (
+                              <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
+                                {fr._trace.length} action{fr._trace.length > 1 ? 's' : ''}
+                              </span>
+                            ) : null}
+                          </>
+                        );
+                      })()}
+                    </div>
                     <FieldEditor row={row} onChange={(f) => setFields(idx, f)} />
                   </>
                 ) : args.length > 0 ? (
@@ -268,7 +352,14 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
                     ))}
                   </div>
                 ) : row.stage === 'oddsSelect' || row.stage === 'odds_select' ? (
-                  <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
+                  <>
+                    <button
+                      onClick={() => setPickerFor(idx)}
+                      className="mb-1 text-xs px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                      🎯 Pick market box
+                    </button>
+                    <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
+                  </>
                 ) : (
                   <p className="text-[11px] text-slate-400">no args</p>
                 )}
@@ -331,6 +422,68 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
         </div>
         {saveMsg && <p className="text-xs text-slate-600 mt-2">{saveMsg}</p>}
       </section>
+
+      {pickerFor !== null && pipeline[pickerFor] && (() => {
+        const pIdx = pickerFor;
+        const row = pipeline[pIdx];
+        return (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch">
+            <div className="m-auto h-[92vh] w-[96vw] max-w-[1400px] rounded-lg bg-white shadow-2xl overflow-hidden">
+              <SelectorPicker
+                initialUrl={sourceUrlFor(pIdx)}
+                geo={geo || undefined}
+                mode={pickerModeFor(row)}
+                containerSelector={row.args?.segmentSelector || row.args?.selector || null}
+                restoreFields={(row._fields || []).map(pfToPickField)}
+                // Multi-field accumulation → the row's _fields (what the YAML serializer reads).
+                onFieldsChange={(fields: PickField[]) =>
+                  setFields(pIdx, fields.map(pickFieldToPF))}
+                // Single/list/row-lca pick → append one field.
+                onPick={(r: PickResult) =>
+                  setFields(pIdx, [
+                    ...(pipeline[pIdx]._fields || []),
+                    { selector: r.selector, as: `field_${(pipeline[pIdx]._fields?.length || 0) + 1}`, method: 'text' },
+                  ])}
+                // oddsSelect market box → append a market keyed on its section selector.
+                onMarketBox={(m: MarketBoxPick) =>
+                  setMarkets(pIdx, [
+                    ...(pipeline[pIdx]._markets || []),
+                    { label: `market_${(pipeline[pIdx]._markets?.length || 0) + 1}`, enabled: true, sectionSelector: m.selector },
+                  ])}
+                // Macro/content box → seed a flatSelect segment when unset, else record as a hint.
+                onMacroBox={(m: MacroBoxPick | null) => {
+                  if (!m) return;
+                  if (row.stage === 'flatSelect' && !row.args?.segmentSelector) {
+                    setArg(pIdx, 'segmentSelector', m.selector);
+                  } else {
+                    setArg(pIdx, 'macroSelector', m.selector);
+                  }
+                }}
+                // Anti-bot inside the mirror → tag the FETCH row so the YAML emits requires_hitl.
+                onAntiBot={(reason: string) =>
+                  patchRow(fetchRowIndexFor(pIdx), { _requires_hitl: true, _anti_bot_kind: reason })}
+                // Recorded navigation actions → the FETCH row's _trace (Click/Type/Scroll/Wait).
+                onActionsCommitted={(actions: PickerAction[]) =>
+                  patchRow(fetchRowIndexFor(pIdx), {
+                    _trace: actions
+                      .filter((a) => ['Click', 'Type', 'Scroll', 'Wait'].includes(a.type))
+                      .map((a) => ({
+                        type: a.type as TraceAction['type'],
+                        selector: a.selector, text: a.text, ms: a.ms,
+                      })),
+                  })}
+                // Long-text body suggestion → append it as a content field.
+                onBodySuggestion={(s) =>
+                  setFields(pIdx, [
+                    ...(pipeline[pIdx]._fields || []),
+                    { selector: s.selector, as: 'content', method: s.method === 'boilerPipe' ? 'boilerPipe' : 'text' },
+                  ])}
+                onClose={() => setPickerFor(null)}
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
