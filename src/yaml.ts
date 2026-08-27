@@ -321,3 +321,374 @@ export function buildYamlFromPipeline(pipeline: PipelineRow[], ctx: YamlContext)
 
   return lines.join('\n');
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * parsePipelineFromYaml — the inverse of buildYamlFromPipeline.
+ *
+ * The generator hand-emits a tightly constrained subset of YAML (fixed 2-space
+ * indentation, inline `{ key: value }` maps, positional args carrying `# name`
+ * comments). Rather than pull in a YAML library — the package deliberately has
+ * none — this parser inverts exactly that subset, line by line, so the pair
+ * satisfies the round-trip invariant covered by yaml.test.mjs.
+ *
+ * It reconstructs the visual `PipelineRow[]` model: per-stage args, `_fields`
+ * (extract / flatSelect / parallelSelect), `_markets` (oddsSelect), embedded
+ * `_trace` actions on fetch-like stages, multi-source `_src` grouping, and the
+ * per-row anti-bot / HITL flags carried in the `metadata` block.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+interface PLine { indent: number; text: string; }
+
+function toPLines(src: string[]): PLine[] {
+  const out: PLine[] = [];
+  for (const raw of src) {
+    const m = /^(\s*)(.*)$/.exec(raw);
+    const indent = m ? m[1].length : 0;
+    const text = m ? m[2] : raw;
+    if (text === '') continue;                 // blank lines never carry meaning here
+    if (text.startsWith('#')) continue;        // full-line comments (e.g. the parallelSelect note)
+    out.push({ indent, text });
+  }
+  return out;
+}
+
+/** Unescape a single scalar as emitted by yamlScalar (quoted string or bareword). */
+function parseScalarStr(tokRaw: string): string {
+  const tok = tokRaw.trim();
+  if (tok.startsWith('"')) {
+    let out = '';
+    let i = 1;
+    while (i < tok.length) {
+      const c = tok[i];
+      if (c === '\\') {
+        const n = tok[i + 1];
+        if (n === '"') { out += '"'; i += 2; continue; }
+        if (n === '\\') { out += '\\'; i += 2; continue; }
+        out += n ?? ''; i += 2; continue;
+      }
+      if (c === '"') break;
+      out += c; i += 1;
+    }
+    return out;
+  }
+  return tok;
+}
+
+/** Split on a top-level separator, honouring double-quoted spans (with escapes). */
+function splitTopLevel(s: string, sep: string): string[] {
+  const parts: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuote) {
+      if (c === '\\') { cur += c + (s[i + 1] ?? ''); i += 1; continue; }
+      if (c === '"') inQuote = false;
+      cur += c; continue;
+    }
+    if (c === '"') { inQuote = true; cur += c; continue; }
+    if (c === sep) { parts.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+/** Parse an inline `{ key: value, key: value }` map (values are yamlScalar output). */
+function parseInlineMap(str: string): Record<string, string> {
+  const inner = str.trim().replace(/^\{/, '').replace(/\}$/, '');
+  const map: Record<string, string> = {};
+  for (const piece of splitTopLevel(inner, ',')) {
+    const p = piece.trim();
+    if (!p) continue;
+    const ci = p.indexOf(':');
+    if (ci < 0) continue;
+    const key = p.slice(0, ci).trim();
+    map[key] = parseScalarStr(p.slice(ci + 1));
+  }
+  return map;
+}
+
+/** Split a `- value    # name` line into its scalar value and comment name. */
+function splitValueComment(afterDash: string): { value: string; name?: string } {
+  const idx = afterDash.lastIndexOf('    #');
+  if (idx < 0) return { value: afterDash.trim() };
+  return {
+    value: afterDash.slice(0, idx).trim(),
+    name: afterDash.slice(idx + '    #'.length).trim(),
+  };
+}
+
+function parseFieldMap(headText: string): PipelineField {
+  const brace = headText.slice(headText.indexOf('{'));
+  const m = parseInlineMap(brace);
+  const f: PipelineField = { selector: m.selector ?? '' };
+  if (m.method !== undefined) f.method = m.method;
+  if (m.as !== undefined) f.as = m.as;
+  return f;
+}
+
+function traceFromInlineMap(m: Record<string, string>): TraceAction | null {
+  switch (m.action) {
+    case 'click':
+      return { type: 'Click', selector: m.selector };
+    case 'input':
+      return { type: 'Type', selector: m.selector, text: m.text ?? '' };
+    case 'wait':
+      return { type: 'Wait', ms: Math.round(Number(m.seconds) * 1000) };
+    case 'scroll': {
+      const px = Math.abs(Number(m.pixels));
+      return { type: 'Scroll', y: m.direction === 'up' ? -px : px };
+    }
+    default:
+      return null;
+  }
+}
+
+interface Item { head: PLine; sub: PLine[]; }
+
+/** Direct list children (`- …`) of a parent line, each with its deeper sub-lines. */
+function childItems(lines: PLine[], parentIndent: number): Item[] {
+  const deeper = lines.filter((l) => l.indent > parentIndent);
+  const dashes = deeper.filter((l) => l.text.startsWith('-'));
+  if (!dashes.length) return [];
+  const childIndent = Math.min(...dashes.map((l) => l.indent));
+  const items: Item[] = [];
+  let cur: Item | null = null;
+  for (const l of deeper) {
+    if (l.indent === childIndent && l.text.startsWith('-')) {
+      if (cur) items.push(cur);
+      cur = { head: l, sub: [] };
+    } else if (cur) {
+      cur.sub.push(l);
+    }
+  }
+  if (cur) items.push(cur);
+  return items;
+}
+
+function parseMarkets(sub: PLine[]): OddsMarket[] {
+  const labelLines = sub.filter((l) => l.text.startsWith('- label:'));
+  if (!labelLines.length) return [];
+  const labelIndent = Math.min(...labelLines.map((l) => l.indent));
+  const groups: PLine[][] = [];
+  let cur: PLine[] | null = null;
+  for (const l of sub) {
+    if (l.indent === labelIndent && l.text.startsWith('- label:')) {
+      if (cur) groups.push(cur);
+      cur = [l];
+    } else if (cur) {
+      cur.push(l);
+    }
+  }
+  if (cur) groups.push(cur);
+
+  return groups.map((g) => {
+    const head = g[0];
+    const label = parseScalarStr(head.text.slice('- label:'.length));
+    const secLine = g.find((l) => l.text.startsWith('sectionSelector:'));
+    const rowLine = g.find((l) => l.text.startsWith('rowSelector:'));
+    const fields = g.filter((l) => l.text.startsWith('- {')).map((l) => parseFieldMap(l.text));
+    const market: OddsMarket = {
+      label,
+      enabled: true,
+      sectionSelector: secLine ? parseScalarStr(secLine.text.slice('sectionSelector:'.length)) : '',
+      fields,
+    };
+    if (rowLine) market.rowSelector = parseScalarStr(rowLine.text.slice('rowSelector:'.length));
+    return market;
+  });
+}
+
+/** Parse the body of one `- stage: …` chunk into a PipelineRow. */
+function parseChunk(chunk: PLine[]): PipelineRow {
+  const header = chunk[0];
+  const base = header.indent;
+  const stage = header.text.slice('- stage:'.length).trim();
+  const body = chunk.slice(1);
+  const argsLine = body.find((l) => l.indent === base + 2 && l.text.startsWith('args:'));
+  const argsRest = argsLine ? argsLine.text.slice('args:'.length).trim() : '';
+  const hasItems = !!argsLine && argsRest === '';
+  const items = hasItems ? childItems(body, argsLine!.indent) : [];
+
+  if (stage === 'extract') {
+    const _fields = items
+      .filter((it) => it.head.text.startsWith('- {'))
+      .map((it) => parseFieldMap(it.head.text));
+    return { stage: 'extract', args: {}, _fields };
+  }
+
+  if (stage === 'parallelSelect') {
+    // Emitted only from a flatSelect whose fields are all parallel siblings.
+    const marker = items.find((it) => it.head.text === '-') || items[0];
+    const _fields = (marker ? marker.sub : [])
+      .filter((l) => l.text.startsWith('- {'))
+      .map((l) => ({ ...parseFieldMap(l.text), _parallel: true }));
+    return { stage: 'flatSelect', args: {}, _fields };
+  }
+
+  if (stage === 'flatSelect') {
+    const segItem = items[0];
+    const seg = segItem ? splitValueComment(segItem.head.text.slice(1)).value : '';
+    const fieldsItem = items[1];
+    let _fields: PipelineField[] = [];
+    if (fieldsItem && fieldsItem.head.text === '-') {
+      _fields = fieldsItem.sub
+        .filter((l) => l.text.startsWith('- {'))
+        .map((l) => parseFieldMap(l.text));
+    }
+    return { stage: 'flatSelect', args: { segmentSelector: parseScalarStr(seg) }, _fields };
+  }
+
+  if (stage === 'oddsSelect' || stage === 'odds_select') {
+    const marketsItem = items.find((it) => it.head.text.startsWith('- markets:'));
+    const _markets = marketsItem ? parseMarkets(marketsItem.sub) : [];
+    return { stage, args: {}, _markets };
+  }
+
+  if (stage === 'dedup') {
+    const col = items[0] ? parseScalarStr(splitValueComment(items[0].head.text.slice(1)).value) : '';
+    return { stage: 'dedup', args: col ? { columns: col } : {} };
+  }
+
+  // Generic stage: positional args (recovered from `# name` comments) + optional
+  // embedded trace actions on fetch-like stages.
+  const args: Record<string, any> = {};
+  let _trace: TraceAction[] | undefined;
+  let posIndex = 0;
+  for (const it of items) {
+    if (it.head.text === '-') {
+      const actions = it.sub
+        .filter((l) => l.text.startsWith('- {'))
+        .map((l) => traceFromInlineMap(parseInlineMap(l.text.slice(l.text.indexOf('{')))))
+        .filter((a): a is TraceAction => a !== null);
+      if (actions.length) _trace = actions;
+      continue;
+    }
+    if (it.head.text.startsWith('- |')) continue; // block scalar (e.g. sql_query) — not a positional arg
+    const { value, name } = splitValueComment(it.head.text.slice(1));
+    const key = name || String(posIndex);
+    args[key] = parseScalarStr(value);
+    posIndex += 1;
+  }
+  const row: PipelineRow = { stage, args };
+  if (_trace) row._trace = _trace;
+  return row;
+}
+
+/** Group a pipeline body (lines under a `pipeline:` key) into per-stage chunks. */
+function parsePipelineBlock(lines: PLine[]): PipelineRow[] {
+  const stageLines = lines.filter((l) => l.text.startsWith('- stage:'));
+  if (!stageLines.length) return [];
+  const base = Math.min(...stageLines.map((l) => l.indent));
+  const chunks: PLine[][] = [];
+  let cur: PLine[] | null = null;
+  for (const l of lines) {
+    if (l.indent === base && l.text.startsWith('- stage:')) {
+      if (cur) chunks.push(cur);
+      cur = [l];
+    } else if (cur) {
+      cur.push(l);
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks.map(parseChunk);
+}
+
+/** Collect the lines belonging to a top-level `key:` block (indent > 0 until next col-0 key). */
+function sectionBody(lines: PLine[], startIdx: number): PLine[] {
+  const out: PLine[] = [];
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (lines[i].indent === 0) break;
+    out.push(lines[i]);
+  }
+  return out;
+}
+
+export function parsePipelineFromYaml(yaml: string, _ctx?: YamlContext): PipelineRow[] {
+  if (!yaml || !yaml.trim() || yaml.trim() === '(add at least one stage)') return [];
+  const lines = toPLines(String(yaml).split('\n'));
+
+  // Top-level anchors.
+  const topKeys = lines
+    .map((l, i) => ({ l, i }))
+    .filter(({ l }) => l.indent === 0 && /^[a-zA-Z_]+:/.test(l.text));
+
+  const rows: PipelineRow[] = [];
+  const sourcesIdx = topKeys.find(({ l }) => l.text === 'sources:');
+
+  if (sourcesIdx) {
+    // Multi-source: each `- source: "source_N"` owns a `pipeline:` sub-block; a
+    // top-level `pipeline:` (if present) is the shared tail.
+    const body = sectionBody(lines, sourcesIdx.i);
+    // Group into per-source items keyed by the `- source:` lines.
+    const sourceHeads = body.filter((l) => l.text.startsWith('- source:'));
+    if (sourceHeads.length) {
+      const srcIndent = Math.min(...sourceHeads.map((l) => l.indent));
+      let curSrc: number | null = null;
+      let bucket: PLine[] = [];
+      const flush = () => {
+        if (curSrc == null) return;
+        // Within the bucket, find the `pipeline:` line and take its deeper lines.
+        const pl = bucket.find((l) => l.text === 'pipeline:');
+        if (pl) {
+          const sub = bucket.filter((l) => l.indent > pl.indent);
+          for (const r of parsePipelineBlock(sub)) rows.push({ ...r, _src: curSrc });
+        }
+      };
+      for (const l of body) {
+        if (l.indent === srcIndent && l.text.startsWith('- source:')) {
+          flush();
+          const label = parseScalarStr(l.text.slice('- source:'.length));
+          const m = /source_(\d+)/.exec(label);
+          curSrc = m ? Number(m[1]) : 1;
+          bucket = [];
+        } else if (curSrc != null) {
+          bucket.push(l);
+        }
+      }
+      flush();
+    }
+    // Shared tail at top level.
+    const tail = topKeys.find(({ l }) => l.text === 'pipeline:');
+    if (tail) {
+      for (const r of parsePipelineBlock(sectionBody(lines, tail.i))) {
+        rows.push({ ...r, _src: 'shared' });
+      }
+    }
+  } else {
+    const pipelineIdx = topKeys.find(({ l }) => l.text === 'pipeline:');
+    if (pipelineIdx) {
+      rows.push(...parsePipelineBlock(sectionBody(lines, pipelineIdx.i)));
+    }
+  }
+
+  // metadata.requires_hitl / anti_bot_kinds → per-row flags on fetch-like stages.
+  const metaIdx = topKeys.find(({ l }) => l.text === 'metadata:');
+  if (metaIdx) {
+    const meta = sectionBody(lines, metaIdx.i);
+    const requiresHitl = meta.some((l) => /^requires_hitl:\s*true$/.test(l.text));
+    const kindsLine = meta.find((l) => l.text.startsWith('anti_bot_kinds:'));
+    let kinds: string[] = [];
+    if (kindsLine) {
+      const arr = kindsLine.text.slice('anti_bot_kinds:'.length).trim().replace(/^\[/, '').replace(/\]$/, '');
+      kinds = splitTopLevel(arr, ',').map((s) => parseScalarStr(s)).filter((s) => s !== '');
+    }
+    if (requiresHitl) {
+      const fetchIdx = rows
+        .map((r, i) => ({ r, i }))
+        .filter(({ r }) => FETCH_LIKE_STAGES.has(r.stage))
+        .map(({ i }) => i);
+      if (kinds.length) {
+        kinds.forEach((k, j) => {
+          const idx = fetchIdx[j];
+          if (idx != null) { rows[idx]._requires_hitl = true; rows[idx]._anti_bot_kind = k; }
+        });
+      } else if (fetchIdx.length) {
+        rows[fetchIdx[0]]._requires_hitl = true;
+      }
+    }
+  }
+
+  return rows;
+}

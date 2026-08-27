@@ -12,7 +12,7 @@
  * This covers the manual/structured flow. The selector-inference sub-wizard (infer-fields,
  * live picker, CMF preview) plugs into the same wizPipeline rows and is ported separately.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getStageCatalog,
   saveGeneratedPipeline,
@@ -21,6 +21,7 @@ import {
 } from '../client';
 import {
   buildYamlFromPipeline,
+  parsePipelineFromYaml,
   PipelineRow,
   PipelineField,
   StageSpec,
@@ -53,8 +54,29 @@ const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
  * @param chatSlot optional "design with chat" panel injected by the host — the SAME slot the
  *   agentic studio uses (DesignWithChat is generic; only the context differs, ETL vs agentic).
  *   The package bundles no chat component; the host passes one.
+ * @param value optional controlled pipeline YAML. When provided together with `onChange`, the
+ *   wizard becomes a controlled value/onChange editor: it seeds its internal rows from
+ *   parsePipelineFromYaml(value) and emits buildYamlFromPipeline(...) on every edit. Omit both
+ *   for the standalone (self-saving) behaviour — identical to before.
+ * @param onChange called with the regenerated YAML whenever the pipeline changes (controlled).
+ * @param embedded when true, hides the standalone chrome (pipeline name, Validate/Save/Run) so
+ *   the host form owns persistence. The stage catalogue, stage editors and visual picker stay.
+ * @param label heading for the pipeline column (defaults to "Pipeline").
  */
-export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {}) {
+export default function BuildWizard({
+  chatSlot,
+  value,
+  onChange,
+  embedded = false,
+  label,
+}: {
+  chatSlot?: ReactNode;
+  value?: string;
+  onChange?: (yaml: string) => void;
+  embedded?: boolean;
+  label?: string;
+} = {}) {
+  const controlled = value !== undefined && typeof onChange === 'function';
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
@@ -188,6 +210,31 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
     }),
     [pipeline, catalog, runtime, geo, pyExts]);
 
+  // ── Controlled/embedded value ⇄ onChange plumbing ──────────────────────────
+  // `lastYaml` is the last YAML that crossed the boundary in either direction. It
+  // breaks the feedback loop: an incoming `value` we already emitted is ignored,
+  // and an outgoing YAML equal to the incoming `value` is not re-emitted.
+  const lastYaml = useRef<string | null>(null);
+
+  // Incoming: parse an externally-changed `value` into rows.
+  useEffect(() => {
+    if (!controlled) return;
+    const incoming = value ?? '';
+    if (incoming === lastYaml.current) return;
+    lastYaml.current = incoming;
+    setPipeline(parsePipelineFromYaml(incoming));
+  }, [controlled, value]);
+
+  // Outgoing: emit regenerated YAML on every edit (empty pipeline → empty string,
+  // never the "(add at least one stage)" placeholder).
+  useEffect(() => {
+    if (!controlled || !onChange) return;
+    const out = pipeline.length === 0 ? '' : yaml;
+    if (out === lastYaml.current) return;
+    lastYaml.current = out;
+    onChange(out);
+  }, [controlled, onChange, pipeline, yaml]);
+
   const findSpec = (name: string) =>
     catalog.find((s) => s.stage_name === name || (s.aliases || []).includes(name));
 
@@ -275,7 +322,7 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
 
       {/* Pipeline + preview */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Pipeline</h3>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">{label || 'Pipeline'}</h3>
 
         {pipeline.length === 0 && (
           <p className="text-sm text-slate-400 mb-3">Add stages from the catalogue to begin.</p>
@@ -396,31 +443,36 @@ export default function BuildWizard({ chatSlot }: { chatSlot?: ReactNode } = {})
           {yaml}
         </pre>
 
-        <div className="flex items-center gap-2 mb-2">
-          <input
-            value={pipelineName}
-            onChange={(e) => setPipelineName(e.target.value)}
-            placeholder="pipeline name"
-            className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
-          />
-          <button onClick={handleValidate}
-            className="text-xs px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
-            Validate
-          </button>
-        </div>
-        {validation && <p className="text-xs text-slate-500 mb-2">{validation}</p>}
+        {/* Standalone persistence chrome — hidden when the host form owns saving. */}
+        {!embedded && (
+          <>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                value={pipelineName}
+                onChange={(e) => setPipelineName(e.target.value)}
+                placeholder="pipeline name"
+                className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+              <button onClick={handleValidate}
+                className="text-xs px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
+                Validate
+              </button>
+            </div>
+            {validation && <p className="text-xs text-slate-500 mb-2">{validation}</p>}
 
-        <div className="flex gap-2">
-          <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
-            className="px-3 py-1.5 rounded border border-slate-300 text-sm disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save draft'}
-          </button>
-          <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
-            className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-50">
-            Save & run
-          </button>
-        </div>
-        {saveMsg && <p className="text-xs text-slate-600 mt-2">{saveMsg}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
+                className="px-3 py-1.5 rounded border border-slate-300 text-sm disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save draft'}
+              </button>
+              <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
+                className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-50">
+                Save & run
+              </button>
+            </div>
+            {saveMsg && <p className="text-xs text-slate-600 mt-2">{saveMsg}</p>}
+          </>
+        )}
       </section>
 
       {pickerFor !== null && pipeline[pickerFor] && (() => {
