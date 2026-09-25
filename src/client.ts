@@ -24,6 +24,24 @@ export interface TenantStudioConfig {
   apiBase: string;
   /** Returns the current bearer token (or null). A function, so a rotated token is picked up. */
   getToken: () => string | null;
+  /**
+   * Base for the picker's IFRAME, when the host proxies it.
+   *
+   * Every other call here carries `Authorization: Bearer`, but the iframe is an `src`
+   * attribute: the browser issues a plain GET and CANNOT attach a header, so pointing it
+   * straight at the tenant API earns
+   *   {"error":"Authentication required. Provide X-API-Key header or Authorization: Bearer"}
+   * The Vue original did not hit this because its endpoint was the PUBLIC demo twin
+   * (/api/webrobot/api/demo/wizard/iframe/...); the port moved to /tenant/... for
+   * multi-tenancy and inherited an authentication it had no way to satisfy.
+   *
+   * A host therefore passes a SAME-ORIGIN path it proxies itself, adding the credential
+   * server-side (the Next app does this under /api/tenant/wizard/iframe). Left unset, the
+   * old direct URL is kept, so nothing silently changes for a host that has no proxy.
+   * Putting the token in the query string was the alternative and was rejected: it would
+   * leave a reusable credential in server logs and browser history.
+   */
+  iframeBase?: string;
 }
 
 let _config: TenantStudioConfig | null = null;
@@ -184,5 +202,8 @@ export const wizardDeregisterRemote = (sessionId: string) =>
   call<any>('DELETE', `/wizard/register-remote/${encodeURIComponent(sessionId)}`);
 
 /** Base for the iframe live-preview proxy — used as a src, not fetched as JSON. */
-export const wizardIframeSrc = (sessionId: string, path = '') =>
-  `${config().apiBase}${TENANT}/wizard/iframe/${encodeURIComponent(sessionId)}/${path}`;
+export const wizardIframeSrc = (sessionId: string, path = '') => {
+  const { apiBase, iframeBase } = config();
+  const base = iframeBase ? iframeBase.replace(/\/$/, '') : `${apiBase}${TENANT}/wizard/iframe`;
+  return `${base}/${encodeURIComponent(sessionId)}/${path}`;
+};
