@@ -169,8 +169,17 @@ export default function BuildWizard({
     return any ? String(urlOf(any)) : '';
   };
 
+  /** URL della riga stessa: il picker non puo' aprire niente senza. */
+  const urlOfRow = (r: PipelineRow) =>
+    String(r?.args?.url || r?.args?.startUrl || r?.args?.startUrls || '');
+
   const pickerModeFor = (row: PipelineRow): PickerMode => {
     if (row.stage === 'oddsSelect' || row.stage === 'odds_select') return 'market-box';
+    // Una riga di fetch non ha campi da selezionare: quello che si compone li' e' la
+    // NAVIGAZIONE (accetta i cookie, cerca, clicca "carica altro") prima che la pagina
+    // mostri i dati. Il picker sapeva gia' registrarla — 'action-record' esisteva — ma
+    // nessuno gliela chiedeva mai, e dal fetch non si poteva nemmeno aprire il picker.
+    if (FETCH_STAGES.has(row.stage)) return 'action-record';
     return 'multi-field';
   };
 
@@ -179,6 +188,10 @@ export default function BuildWizard({
   // row in the same source group; fall back to the picked row if there's none.
   const fetchRowIndexFor = (pIdx: number): number => {
     const row = pipeline[pIdx];
+    // Se il picker e' stato aperto PROPRIO da una riga di fetch (registrazione azioni), la
+    // traccia appartiene a quella riga: senza questo si prendeva la prima del gruppo, che
+    // con due sorgenti nello stesso gruppo e' un'altra.
+    if (FETCH_STAGES.has(row?.stage)) return pIdx;
     const inSrc = pipeline.findIndex(
       (r) => FETCH_STAGES.has(r.stage) && srcKey(r) === srcKey(row));
     if (inSrc >= 0) return inSrc;
@@ -410,6 +423,34 @@ export default function BuildWizard({
                 ) : (
                   <p className="text-[11px] text-slate-400">no args</p>
                 )}
+
+                {FETCH_STAGES.has(row.stage) && (
+                  <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+                    <button
+                      onClick={() => setPickerFor(idx)}
+                      title={urlOfRow(row) ? 'Apri la pagina e registra i passaggi' : 'Serve prima un url in questa riga'}
+                      disabled={!urlOfRow(row)}
+                      className="text-xs px-2 py-1 rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40">
+                      🎬 Registra azioni
+                    </button>
+                    {row._trace?.length ? (
+                      <>
+                        <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
+                          {row._trace.length} azion{row._trace.length > 1 ? 'i' : 'e'} registrat{row._trace.length > 1 ? 'e' : 'a'}
+                        </span>
+                        <button
+                          onClick={() => setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _trace: undefined } : r)))}
+                          className="text-[10px] text-slate-400 hover:text-red-600">
+                          svuota
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">
+                        cookie, ricerche, “carica altro”: i passaggi prima dei dati
+                      </span>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -488,14 +529,20 @@ export default function BuildWizard({
                 containerSelector={row.args?.segmentSelector || row.args?.selector || null}
                 restoreFields={(row._fields || []).map(pfToPickField)}
                 // Multi-field accumulation → the row's _fields (what the YAML serializer reads).
-                onFieldsChange={(fields: PickField[]) =>
-                  setFields(pIdx, fields.map(pickFieldToPF))}
+                // In registrazione azioni la riga e' un fetch: non ha campi, e scriverglieli
+                // lascerebbe uno stato che il serializzatore ignora e l'utente non vede.
+                onFieldsChange={(fields: PickField[]) => {
+                  if (FETCH_STAGES.has(pipeline[pIdx]?.stage)) return;
+                  setFields(pIdx, fields.map(pickFieldToPF));
+                }}
                 // Single/list/row-lca pick → append one field.
-                onPick={(r: PickResult) =>
+                onPick={(r: PickResult) => {
+                  if (FETCH_STAGES.has(pipeline[pIdx]?.stage)) return;
                   setFields(pIdx, [
                     ...(pipeline[pIdx]._fields || []),
                     { selector: r.selector, as: `field_${(pipeline[pIdx]._fields?.length || 0) + 1}`, method: 'text' },
-                  ])}
+                  ]);
+                }}
                 // oddsSelect market box → append a market keyed on its section selector.
                 onMarketBox={(m: MarketBoxPick) =>
                   setMarkets(pIdx, [
