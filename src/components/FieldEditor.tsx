@@ -76,20 +76,20 @@ export default function FieldEditor({
           value={inferUrl}
           onChange={(e) => setInferUrl(e.target.value)}
           placeholder="URL to infer fields from…"
-          className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+          className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
         />
         <button
           onClick={infer}
           disabled={inferring}
-          className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          className="text-sm px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
         >
           {inferring ? '…' : 'Infer fields'}
         </button>
       </div>
-      {inferMsg && <p className="text-[11px] text-slate-500">{inferMsg}</p>}
+      {inferMsg && <p className="text-xs text-slate-500">{inferMsg}</p>}
 
       {fields.length === 0 && (
-        <p className="text-[11px] text-slate-400">No fields yet — add one or infer from a URL.</p>
+        <p className="text-xs text-slate-400">No fields yet — add one or infer from a URL.</p>
       )}
 
       {fields.map((f, i) => (
@@ -99,13 +99,13 @@ export default function FieldEditor({
               value={f.selector}
               onChange={(e) => updateField(i, 'selector', e.target.value)}
               placeholder="CSS selector"
-              className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+              className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm font-mono"
             />
             <button
               type="button"
               title="Pick visually — click the element on a live page"
               onClick={() => setPickingIdx(i)}
-              className="shrink-0 rounded border border-blue-200 px-1.5 py-1 text-xs hover:bg-blue-50"
+              className="shrink-0 rounded border border-blue-200 px-1.5 py-1 text-sm hover:bg-blue-50"
             >
               🎯
             </button>
@@ -114,18 +114,18 @@ export default function FieldEditor({
             value={f.as || ''}
             onChange={(e) => updateField(i, 'as', e.target.value)}
             placeholder="column"
-            className="rounded border border-slate-200 px-2 py-1 text-xs"
+            className="rounded border border-slate-200 px-2 py-1 text-sm"
           />
           <select
             value={f.method || 'text'}
             onChange={(e) => updateField(i, 'method', e.target.value)}
-            className="rounded border border-slate-200 px-1 py-1 text-xs"
+            className="rounded border border-slate-200 px-1 py-1 text-sm"
           >
             {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
-          <button onClick={() => removeField(i)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+          <button onClick={() => removeField(i)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
           {isFlat && (
-            <label className="col-span-4 flex items-center gap-1 text-[10px] text-slate-400 -mt-1">
+            <label className="col-span-4 flex items-center gap-1 text-xs text-slate-400 -mt-1">
               <input
                 type="checkbox"
                 checked={!!f._parallel}
@@ -137,7 +137,7 @@ export default function FieldEditor({
         </div>
       ))}
 
-      <button onClick={addField} className="text-xs text-blue-600 hover:underline">+ add field</button>
+      <button onClick={addField} className="text-sm text-blue-600 hover:underline">+ add field</button>
 
       {pickingIdx !== null && (
         <SelectorPicker

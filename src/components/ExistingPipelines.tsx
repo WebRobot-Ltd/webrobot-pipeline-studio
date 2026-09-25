@@ -139,7 +139,7 @@ export default function ExistingPipelines() {
         <h2 className="text-lg font-semibold text-slate-800">Execute existing pipelines</h2>
         <button
           onClick={loadPipelines}
-          className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+          className="text-sm px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
           disabled={loading}
         >
           {loading ? 'Loading…' : 'Refresh'}
@@ -173,14 +173,14 @@ export default function ExistingPipelines() {
         <div className="mb-4 text-sm text-slate-600">
           <p className="mb-2">{selected.description}</p>
           {selected.stages.length > 0 && (
-            <p className="text-xs text-slate-500">{selected.stages.length} stage(s)</p>
+            <p className="text-sm text-slate-500">{selected.stages.length} stage(s)</p>
           )}
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Execution mode</label>
+          <label className="block text-sm text-slate-500 mb-1">Execution mode</label>
           <select
             value={executionMode}
             onChange={(e) => setExecutionMode(e.target.value as ExecutionMode)}
@@ -192,7 +192,7 @@ export default function ExistingPipelines() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Runtime</label>
+          <label className="block text-sm text-slate-500 mb-1">Runtime</label>
           <select
             value={wizRuntime}
             onChange={(e) => setWizRuntime(e.target.value as WizRuntime)}
@@ -228,18 +228,18 @@ export default function ExistingPipelines() {
           <div className="flex items-center gap-2 text-sm mb-2">
             <span className="text-slate-500">Status:</span>
             <span className="font-medium text-slate-800">{status}</span>
-            {execId && <span className="text-xs text-slate-400">({execId})</span>}
+            {execId && <span className="text-sm text-slate-400">({execId})</span>}
           </div>
           {execError && <p className="text-sm text-red-600 mb-2">{execError}</p>}
           {logs && (
-            <pre className="max-h-64 overflow-auto rounded bg-slate-900 text-slate-100 text-xs p-3 whitespace-pre-wrap">
+            <pre className="max-h-64 overflow-auto rounded bg-slate-900 text-slate-100 text-sm p-3 whitespace-pre-wrap">
               {logs}
             </pre>
           )}
           {output != null && (
             <details className="mt-2">
               <summary className="text-sm text-slate-600 cursor-pointer">Output</summary>
-              <pre className="max-h-64 overflow-auto rounded bg-slate-50 text-xs p-3 mt-1">
+              <pre className="max-h-64 overflow-auto rounded bg-slate-50 text-sm p-3 mt-1">
                 {JSON.stringify(output, null, 2)}
               </pre>
             </details>

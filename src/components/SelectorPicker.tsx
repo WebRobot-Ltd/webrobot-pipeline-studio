@@ -1041,7 +1041,7 @@ export default function SelectorPicker({
 
         {/* Address bar */}
         {loadedUrl && (
-          <div className="flex items-center gap-2 border-b bg-slate-50 px-3 py-1 text-xs text-slate-500">
+          <div className="flex items-center gap-2 border-b bg-slate-50 px-3 py-1 text-sm text-slate-500">
             <span>URL:</span>
             <code className="truncate" title={loadedUrl}>{loadedUrl}</code>
           </div>
@@ -1084,7 +1084,7 @@ export default function SelectorPicker({
 
         {/* Anti-bot warning */}
         {antiBot.detected && (
-          <div className="bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+          <div className="bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
             🤖 Anti-bot detected ({antiBot.reason}) — raw-event capture. Tag the pipeline HITL-required.
           </div>
         )}
@@ -1142,7 +1142,7 @@ export default function SelectorPicker({
               </button>
             </div>
             {stagedActions.length > 0 && (
-              <ul className="max-h-24 overflow-auto text-xs text-slate-600">
+              <ul className="max-h-24 overflow-auto text-sm text-slate-600">
                 {stagedActions.map((a, i) => (
                   <li key={i}>
                     {a.type}
@@ -1160,11 +1160,11 @@ export default function SelectorPicker({
           <div className="border-t px-3 py-2 text-sm">
             <div className="flex items-center gap-2">
               <code className="rounded bg-slate-100 px-1.5 py-0.5">{selected.selector}</code>
-              <span className="text-xs text-slate-500">
+              <span className="text-sm text-slate-500">
                 {selected.matches} match{selected.matches === 1 ? '' : 'es'}
               </span>
             </div>
-            {selected.sampleText && <div className="mt-1 truncate text-xs text-slate-500">{selected.sampleText}</div>}
+            {selected.sampleText && <div className="mt-1 truncate text-sm text-slate-500">{selected.sampleText}</div>}
             <div className="mt-2 flex gap-2">
               <button onClick={applyPickedSelector} className="rounded bg-blue-600 px-3 py-1 text-white">
                 Use this selector
@@ -1180,19 +1180,19 @@ export default function SelectorPicker({
         {pickerMode === 'multi-sample' && (
           <div className="border-t px-3 py-2 text-sm">
             <strong>📍 Repeating-link sampler</strong>
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-sm text-slate-500">
               Click 2+ examples of the same repeating element. The picker grows a selector that matches all clicked samples.
             </div>
             {multiSampleStatus.samples > 0 && (
               <div className="mt-1 flex items-center gap-2">
                 <code className="rounded bg-slate-100 px-1.5 py-0.5">{multiSampleStatus.selector || '— no common selector yet —'}</code>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm text-slate-500">
                   {multiSampleStatus.samples} sample{multiSampleStatus.samples === 1 ? '' : 's'} · {multiSampleStatus.matches} match
                   {multiSampleStatus.matches === 1 ? '' : 'es'}
                 </span>
               </div>
             )}
-            {multiSampleStatus.sampleText && <div className="mt-1 truncate text-xs text-slate-500">{multiSampleStatus.sampleText}</div>}
+            {multiSampleStatus.sampleText && <div className="mt-1 truncate text-sm text-slate-500">{multiSampleStatus.sampleText}</div>}
             <div className="mt-2 flex gap-2">
               <button onClick={applyMultiSample} disabled={!multiSampleStatus.selector} className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50">
                 Use this selector
@@ -1235,9 +1235,9 @@ export default function SelectorPicker({
                 ✅ Done
               </button>
             </div>
-            <div className="text-xs text-slate-500">Click each field on the page to add it. Edit names below.</div>
+            <div className="text-sm text-slate-500">Click each field on the page to add it. Edit names below.</div>
             {fields.length > 0 && (
-              <table className="mt-2 w-full text-xs">
+              <table className="mt-2 w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-400">
                     <th></th>

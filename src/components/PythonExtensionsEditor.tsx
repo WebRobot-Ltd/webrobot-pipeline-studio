@@ -30,7 +30,7 @@ export default function PythonExtensionsEditor({
   return (
     <div className="space-y-2">
       {exts.length === 0 && (
-        <p className="text-[11px] text-slate-400">No Python extensions.</p>
+        <p className="text-xs text-slate-400">No Python extensions.</p>
       )}
       {exts.map((e, i) => {
         const sig = TYPES.find((t) => t.value === e.type)?.sig || '';
@@ -41,29 +41,29 @@ export default function PythonExtensionsEditor({
                 value={e.name}
                 onChange={(ev) => patch(i, { name: ev.target.value })}
                 placeholder="function name"
-                className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+                className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm font-mono"
               />
               <select
                 value={e.type}
                 onChange={(ev) => patch(i, { type: ev.target.value as PyExtension['type'] })}
-                className="rounded border border-slate-200 px-1 py-1 text-xs"
+                className="rounded border border-slate-200 px-1 py-1 text-sm"
               >
                 {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              <button onClick={() => remove(i)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+              <button onClick={() => remove(i)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
             </div>
-            <div className="text-[10px] text-slate-400 font-mono">{sig}</div>
+            <div className="text-xs text-slate-400 font-mono">{sig}</div>
             <textarea
               value={e.functionBody}
               onChange={(ev) => patch(i, { functionBody: ev.target.value })}
               placeholder={e.type === 'sql_query' ? 'SELECT …' : 'body only (indented under the def)'}
               rows={4}
-              className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+              className="w-full rounded border border-slate-200 px-2 py-1 text-sm font-mono"
             />
           </div>
         );
       })}
-      <button onClick={add} className="text-xs text-blue-600 hover:underline">+ add extension</button>
+      <button onClick={add} className="text-sm text-blue-600 hover:underline">+ add extension</button>
     </div>
   );
 }

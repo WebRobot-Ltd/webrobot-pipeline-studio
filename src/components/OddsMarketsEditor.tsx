@@ -36,7 +36,7 @@ export default function OddsMarketsEditor({
 
   return (
     <div className="mt-1 space-y-2">
-      {markets.length === 0 && <p className="text-[11px] text-slate-400">No markets yet.</p>}
+      {markets.length === 0 && <p className="text-xs text-slate-400">No markets yet.</p>}
       {markets.map((m, mi) => (
         <div key={mi} className="rounded border border-slate-200 p-2 space-y-1">
           <div className="flex items-center gap-1.5">
@@ -50,41 +50,41 @@ export default function OddsMarketsEditor({
               value={m.label || ''}
               onChange={(e) => patch(mi, { label: e.target.value })}
               placeholder={`Market ${mi + 1} label`}
-              className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+              className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
             />
-            <button onClick={() => removeMarket(mi)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+            <button onClick={() => removeMarket(mi)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
           </div>
           <input
             value={m.sectionSelector || ''}
             onChange={(e) => patch(mi, { sectionSelector: e.target.value })}
             placeholder="section selector"
-            className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+            className="w-full rounded border border-slate-200 px-2 py-1 text-sm font-mono"
           />
           <input
             value={m.rowSelector || ''}
             onChange={(e) => patch(mi, { rowSelector: e.target.value })}
             placeholder="row selector (optional)"
-            className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+            className="w-full rounded border border-slate-200 px-2 py-1 text-sm font-mono"
           />
           <div className="pl-2 space-y-1">
             {(m.fields || []).map((f, fi) => (
               <div key={fi} className="grid grid-cols-[1fr_1fr_auto_auto] gap-1 items-center">
                 <input value={f.selector} onChange={(e) => patchField(mi, fi, { selector: e.target.value })}
-                  placeholder="selector" className="rounded border border-slate-200 px-2 py-1 text-xs font-mono" />
+                  placeholder="selector" className="rounded border border-slate-200 px-2 py-1 text-sm font-mono" />
                 <input value={f.as || ''} onChange={(e) => patchField(mi, fi, { as: e.target.value })}
-                  placeholder="field" className="rounded border border-slate-200 px-2 py-1 text-xs" />
+                  placeholder="field" className="rounded border border-slate-200 px-2 py-1 text-sm" />
                 <select value={f.method || 'text'} onChange={(e) => patchField(mi, fi, { method: e.target.value })}
-                  className="rounded border border-slate-200 px-1 py-1 text-xs">
+                  className="rounded border border-slate-200 px-1 py-1 text-sm">
                   {METHODS.map((x) => <option key={x} value={x}>{x}</option>)}
                 </select>
-                <button onClick={() => removeField(mi, fi)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
+                <button onClick={() => removeField(mi, fi)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
               </div>
             ))}
-            <button onClick={() => addField(mi)} className="text-[11px] text-blue-600 hover:underline">+ field</button>
+            <button onClick={() => addField(mi)} className="text-xs text-blue-600 hover:underline">+ field</button>
           </div>
         </div>
       ))}
-      <button onClick={addMarket} className="text-xs text-blue-600 hover:underline">+ add market</button>
+      <button onClick={addMarket} className="text-sm text-blue-600 hover:underline">+ add market</button>
     </div>
   );
 }

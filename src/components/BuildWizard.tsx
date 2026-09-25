@@ -298,16 +298,16 @@ export default function BuildWizard({
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-slate-700">Stage catalogue</h3>
-          <span className="text-xs text-slate-400">{catalog.length} stages</span>
+          <span className="text-sm text-slate-400">{catalog.length} stages</span>
         </div>
-        {catalogError && <p className="text-xs text-red-600 mb-2">catalogue failed ({catalogError})</p>}
+        {catalogError && <p className="text-sm text-red-600 mb-2">catalogue failed ({catalogError})</p>}
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="filter stages…"
           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm mb-2"
         />
-        <div className="flex items-center gap-2 mb-3 text-xs">
+        <div className="flex items-center gap-2 mb-3 text-sm">
           <span className="text-slate-500">Add to:</span>
           <select
             value={String(target)}
@@ -334,9 +334,9 @@ export default function BuildWizard({
             return (
             <div key={cat}>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{cat}</span>
+                <span className="text-sm font-semibold text-slate-600 uppercase tracking-wide">{cat}</span>
                 {groupLook.blurb && (
-                  <span className="text-[11px] text-slate-400">{groupLook.blurb}</span>
+                  <span className="text-xs text-slate-400">{groupLook.blurb}</span>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -347,7 +347,7 @@ export default function BuildWizard({
                     key={s.stage_name}
                     onClick={() => addStage(s.stage_name)}
                     title={s.description || `${look.label} — ${look.blurb}`}
-                    className={`text-xs px-2 py-1 rounded-full border inline-flex items-center gap-1 hover:brightness-95 ${look.chip}`}
+                    className={`text-sm px-2 py-1 rounded-full border inline-flex items-center gap-1 hover:brightness-95 ${look.chip}`}
                   >
                     <span aria-hidden="true">{look.icon}</span>
                     {s.stage_name}
@@ -380,7 +380,7 @@ export default function BuildWizard({
                   <span
                     title={ph.hint}
                     className={
-                      'px-2 py-1 rounded-full text-[11px] font-medium border ' +
+                      'px-2 py-1 rounded-full text-xs font-medium border ' +
                       (done
                         ? 'bg-white border-slate-300 text-slate-700'
                         : 'bg-transparent border-dashed border-slate-300 text-slate-400')
@@ -394,7 +394,7 @@ export default function BuildWizard({
             })}
           </ol>
           {advice.missing && (
-            <p className="mt-2 text-[11px] text-amber-700">💡 {advice.missing}</p>
+            <p className="mt-2 text-xs text-amber-700">💡 {advice.missing}</p>
           )}
         </div>
 
@@ -412,35 +412,35 @@ export default function BuildWizard({
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-base leading-none" aria-hidden="true">{look.icon}</span>
                   <span className="text-sm font-mono font-semibold text-slate-800">{row.stage}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
                   {multiSource && (
-                    <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
+                    <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
                       {row._src === 'shared' ? 'shared' : `S${row._src || 1}`}
                     </span>
                   )}
                   <span className="ml-auto flex gap-1">
-                    <button onClick={() => moveStage(idx, -1)} className="text-xs text-slate-400 hover:text-slate-700">↑</button>
-                    <button onClick={() => moveStage(idx, 1)} className="text-xs text-slate-400 hover:text-slate-700">↓</button>
-                    <button onClick={() => removeStage(idx)} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                    <button onClick={() => moveStage(idx, -1)} className="text-sm text-slate-400 hover:text-slate-700">↑</button>
+                    <button onClick={() => moveStage(idx, 1)} className="text-sm text-slate-400 hover:text-slate-700">↓</button>
+                    <button onClick={() => removeStage(idx)} className="text-sm text-red-400 hover:text-red-600">✕</button>
                   </span>
                 </div>
                 {['extract', 'flatSelect'].includes(row.stage) ? (
                   <>
                     {row.stage === 'flatSelect' && (
                       <div className="flex items-center gap-2 mb-1">
-                        <label className="text-[13px] text-slate-600 w-28 shrink-0">segment</label>
+                        <label className="text-sm text-slate-600 w-28 shrink-0">segment</label>
                         <input
                           value={row.args.segmentSelector ?? row.args.selector ?? ''}
                           onChange={(e) => setArg(idx, 'segmentSelector', e.target.value)}
                           placeholder="segment CSS selector"
-                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-[13px] font-mono"
+                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
                         />
                       </div>
                     )}
                     <div className="flex items-center gap-2 mb-1">
                       <button
                         onClick={() => setPickerFor(idx)}
-                        className="text-xs px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50">
+                        className="text-sm px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50">
                         🎯 Pick visually
                       </button>
                       {(() => {
@@ -448,11 +448,11 @@ export default function BuildWizard({
                         return (
                           <>
                             {fr?._requires_hitl && (
-                              <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-700"
+                              <span className="text-xs px-1 rounded bg-amber-100 text-amber-700"
                                 title={fr._anti_bot_kind || 'anti-bot'}>requires HITL</span>
                             )}
                             {fr?._trace?.length ? (
-                              <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
+                              <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
                                 {fr._trace.length} action{fr._trace.length > 1 ? 's' : ''}
                               </span>
                             ) : null}
@@ -466,11 +466,11 @@ export default function BuildWizard({
                   <div className="space-y-1">
                     {args.map((n) => (
                       <div key={n} className="flex items-center gap-2">
-                        <label className="text-[13px] text-slate-600 w-28 shrink-0">{n}</label>
+                        <label className="text-sm text-slate-600 w-28 shrink-0">{n}</label>
                         <input
                           value={row.args[n] ?? ''}
                           onChange={(e) => setArg(idx, n, e.target.value)}
-                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-[13px]"
+                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
                         />
                       </div>
                     ))}
@@ -479,13 +479,13 @@ export default function BuildWizard({
                   <>
                     <button
                       onClick={() => setPickerFor(idx)}
-                      className="mb-1 text-xs px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                      className="mb-1 text-sm px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
                       🎯 Pick market box
                     </button>
                     <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
                   </>
                 ) : (
-                  <p className="text-[11px] text-slate-400">no args</p>
+                  <p className="text-xs text-slate-400">no args</p>
                 )}
 
                 {FETCH_STAGES.has(row.stage) && (
@@ -494,22 +494,22 @@ export default function BuildWizard({
                       onClick={() => setPickerFor(idx)}
                       title={urlOfRow(row) ? 'Apri la pagina e registra i passaggi' : 'Serve prima un url in questa riga'}
                       disabled={!urlOfRow(row)}
-                      className="text-xs px-2 py-1 rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40">
+                      className="text-sm px-2 py-1 rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40">
                       🎬 Registra azioni
                     </button>
                     {row._trace?.length ? (
                       <>
-                        <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
+                        <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
                           {row._trace.length} azion{row._trace.length > 1 ? 'i' : 'e'} registrat{row._trace.length > 1 ? 'e' : 'a'}
                         </span>
                         <button
                           onClick={() => setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _trace: undefined } : r)))}
-                          className="text-[10px] text-slate-400 hover:text-red-600">
+                          className="text-xs text-slate-400 hover:text-red-600">
                           svuota
                         </button>
                       </>
                     ) : (
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-xs text-slate-400">
                         cookie, ricerche, “carica altro”: i passaggi prima dei dati
                       </span>
                     )}
@@ -522,29 +522,29 @@ export default function BuildWizard({
 
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div>
-            <label className="block text-[11px] text-slate-500 mb-0.5">Runtime</label>
+            <label className="block text-xs text-slate-500 mb-0.5">Runtime</label>
             <select value={runtime} onChange={(e) => setRuntime(e.target.value as WizRuntime)}
-              className="w-full rounded border border-slate-300 px-1.5 py-1 text-xs">
+              className="w-full rounded border border-slate-300 px-1.5 py-1 text-sm">
               <option value="spark">Spark</option>
               <option value="ray_actor">Ray actor</option>
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 mb-0.5">Geo (2-letter)</label>
+            <label className="block text-xs text-slate-500 mb-0.5">Geo (2-letter)</label>
             <input value={geo} onChange={(e) => setGeo(e.target.value)} placeholder="e.g. de"
-              className="w-full rounded border border-slate-300 px-1.5 py-1 text-xs" />
+              className="w-full rounded border border-slate-300 px-1.5 py-1 text-sm" />
           </div>
         </div>
 
         <details className="mb-3">
-          <summary className="text-[11px] text-slate-500 cursor-pointer">Python extensions ({pyExts.length})</summary>
+          <summary className="text-xs text-slate-500 cursor-pointer">Python extensions ({pyExts.length})</summary>
           <div className="mt-2">
             <PythonExtensionsEditor exts={pyExts} onChange={setPyExts} />
           </div>
         </details>
 
-        <label className="block text-[11px] text-slate-500 mb-0.5">YAML preview</label>
-        <pre className="max-h-64 overflow-auto rounded bg-slate-900 text-slate-100 text-[11px] p-3 mb-3 whitespace-pre-wrap">
+        <label className="block text-xs text-slate-500 mb-0.5">YAML preview</label>
+        <pre className="max-h-64 overflow-auto rounded bg-slate-900 text-slate-100 text-xs p-3 mb-3 whitespace-pre-wrap">
           {yaml}
         </pre>
 
@@ -559,11 +559,11 @@ export default function BuildWizard({
                 className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
               />
               <button onClick={handleValidate}
-                className="text-xs px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
+                className="text-sm px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
                 Validate
               </button>
             </div>
-            {validation && <p className="text-xs text-slate-500 mb-2">{validation}</p>}
+            {validation && <p className="text-sm text-slate-500 mb-2">{validation}</p>}
 
             <div className="flex gap-2">
               <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
@@ -575,7 +575,7 @@ export default function BuildWizard({
                 Save & run
               </button>
             </div>
-            {saveMsg && <p className="text-xs text-slate-600 mt-2">{saveMsg}</p>}
+            {saveMsg && <p className="text-sm text-slate-600 mt-2">{saveMsg}</p>}
           </>
         )}
       </section>
