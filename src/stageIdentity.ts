@@ -33,47 +33,47 @@ export interface FamilyLook {
 
 export const FAMILIES: Record<StageFamily, FamilyLook> = {
   acquire: {
-    label: 'Acquisizione', icon: '🌐', phase: 1,
+    label: 'Acquire', icon: '🌐', phase: 1,
     bar: 'border-l-blue-500', chip: 'bg-blue-50 text-blue-700 border-blue-200',
-    blurb: 'Apre pagine web e le porta dentro la pipeline.',
+    blurb: 'Opens web pages and brings them into the pipeline.',
   },
   source: {
-    label: 'Fonte esterna', icon: '🔌', phase: 1,
+    label: 'Source', icon: '🔌', phase: 1,
     bar: 'border-l-cyan-500', chip: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-    blurb: 'Prende dati da un servizio o da un archivio pubblico, senza navigare.',
+    blurb: 'Pulls data from a service or public dataset, without browsing.',
   },
   extract: {
-    label: 'Estrazione', icon: '🎯', phase: 2,
+    label: 'Extract', icon: '🎯', phase: 2,
     bar: 'border-l-amber-500', chip: 'bg-amber-50 text-amber-700 border-amber-200',
-    blurb: 'Sceglie i campi da tenere dentro una pagina.',
+    blurb: 'Picks the fields to keep out of a page.',
   },
   intelligent: {
-    label: 'Assistito da AI', icon: '🧠', phase: 2,
+    label: 'AI-assisted', icon: '🧠', phase: 2,
     bar: 'border-l-violet-500', chip: 'bg-violet-50 text-violet-700 border-violet-200',
-    blurb: 'Fa lo stesso lavoro capendo la pagina, senza selettori scritti a mano.',
+    blurb: 'Same job, but by understanding the page — no hand-written selectors.',
   },
   transform: {
-    label: 'Trasformazione', icon: '⚙️', phase: 3,
+    label: 'Transform', icon: '⚙️', phase: 3,
     bar: 'border-l-slate-500', chip: 'bg-slate-100 text-slate-700 border-slate-300',
-    blurb: 'Pulisce, unisce, toglie i doppioni, calcola.',
+    blurb: 'Cleans, joins, de-duplicates, computes.',
   },
   knowledge: {
-    label: 'Conoscenza', icon: '📚', phase: 3,
+    label: 'Knowledge', icon: '📚', phase: 3,
     bar: 'border-l-indigo-500', chip: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    blurb: 'Indicizza i testi per poterli interrogare.',
+    blurb: 'Indexes text so it can be queried later.',
   },
   output: {
-    label: 'Destinazione', icon: '💾', phase: 4,
+    label: 'Destination', icon: '💾', phase: 4,
     bar: 'border-l-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    blurb: 'Scrive il risultato dove ti serve.',
+    blurb: 'Writes the result where you need it.',
   },
   usecase: {
-    label: 'Caso d’uso', icon: '🧩', phase: null,
+    label: 'Use case', icon: '🧩', phase: null,
     bar: 'border-l-pink-500', chip: 'bg-pink-50 text-pink-700 border-pink-200',
-    blurb: 'Blocco già pronto per un dominio specifico.',
+    blurb: 'A ready-made block for a specific domain.',
   },
   other: {
-    label: 'Altro', icon: '▫️', phase: null,
+    label: 'Other', icon: '▫️', phase: null,
     bar: 'border-l-slate-300', chip: 'bg-slate-50 text-slate-600 border-slate-200',
     blurb: '',
   },
@@ -118,10 +118,10 @@ export const lookOf = (stageName: string, category?: string | null): FamilyLook 
 
 /** Le quattro fasi, nell'ordine in cui una pipeline le attraversa. */
 export const PHASES: { n: 1 | 2 | 3 | 4; title: string; hint: string }[] = [
-  { n: 1, title: 'Prendi', hint: 'Da dove arrivano i dati: una pagina web o un servizio esterno.' },
-  { n: 2, title: 'Estrai', hint: 'Quali campi tenere di ciò che hai preso.' },
-  { n: 3, title: 'Trasforma', hint: 'Pulisci, unisci, calcola. Facoltativo.' },
-  { n: 4, title: 'Salva', hint: 'Dove finisce il risultato.' },
+  { n: 1, title: 'Take', hint: 'Where the data comes from: a web page or an external service.' },
+  { n: 2, title: 'Extract', hint: 'Which fields to keep out of what you took.' },
+  { n: 3, title: 'Transform', hint: 'Clean, join, compute. Optional.' },
+  { n: 4, title: 'Save', hint: 'Where the result ends up.' },
 ];
 
 /**
@@ -139,9 +139,9 @@ export function sequenceAdvice(
     if (p) covered.add(p);
   }
   let missing: string | null = null;
-  if (rows.length === 0) missing = 'Comincia da uno stage che prende i dati: una pagina web o una fonte esterna.';
-  else if (!covered.has(1)) missing = 'Manca il punto di partenza: nessuno stage prende i dati.';
-  else if (!covered.has(2) && !covered.has(3)) missing = 'Hai i dati grezzi ma non estrai nulla: aggiungi uno stage di estrazione.';
-  else if (!covered.has(4)) missing = 'Il risultato non viene salvato da nessuna parte: aggiungi una destinazione.';
+  if (rows.length === 0) missing = 'Start with a stage that takes the data: a web page or an external source.';
+  else if (!covered.has(1)) missing = 'No starting point: nothing here takes any data.';
+  else if (!covered.has(2) && !covered.has(3)) missing = 'You have raw data but extract nothing: add an extraction stage.';
+  else if (!covered.has(4)) missing = 'The result is never saved anywhere: add a destination.';
   return { covered, missing };
 }
