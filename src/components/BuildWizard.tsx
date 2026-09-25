@@ -40,6 +40,7 @@ import SelectorPicker, {
   type PickerMode,
 } from './SelectorPicker';
 
+import { lookOf, PHASES, sequenceAdvice } from '../stageIdentity';
 interface CatalogStage extends StageSpec {
   category?: string;
   description?: string;
@@ -251,6 +252,13 @@ export default function BuildWizard({
   const findSpec = (name: string) =>
     catalog.find((s) => s.stage_name === name || (s.aliases || []).includes(name));
 
+  /** Fasi coperte e primo buco da colmare — alimenta la guida alla sequenza. */
+  const advice = useMemo(
+    () => sequenceAdvice(pipeline, (stage) => findSpec(stage)?.category),
+    // findSpec dipende dal catalogo: senza, il consiglio resterebbe fermo al primo caricamento.
+    [pipeline, catalog],
+  );
+
   const handleValidate = async () => {
     setValidation('validating…');
     try {
@@ -313,29 +321,78 @@ export default function BuildWizard({
           </select>
         </div>
         <div className="max-h-96 overflow-auto space-y-3">
-          {groupedCatalog.map(([cat, stages]) => (
+          {/* Le stesse icone e gli stessi colori delle righe compaiono gia' QUI, nel momento in
+              cui si sceglie: e' dove servono di piu'. La categoria grezza del catalogo resta come
+              titolo del gruppo, ma sotto ogni voce porta la sua famiglia, che e' normalizzata e
+              coerente anche per i 26 stage che una categoria non ce l'hanno. */}
+          {groupedCatalog.map(([cat, stages]) => {
+            const groupLook = lookOf(stages[0]?.stage_name || '', stages[0]?.category);
+            return (
             <div key={cat}>
-              <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">{cat}</div>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{cat}</span>
+                {groupLook.blurb && (
+                  <span className="text-[11px] text-slate-400">{groupLook.blurb}</span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5">
-                {stages.map((s) => (
+                {stages.map((s) => {
+                  const look = lookOf(s.stage_name, s.category);
+                  return (
                   <button
                     key={s.stage_name}
                     onClick={() => addStage(s.stage_name)}
-                    title={s.description || s.stage_name}
-                    className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-blue-50 hover:border-blue-300"
+                    title={s.description || `${look.label} — ${look.blurb}`}
+                    className={`text-xs px-2 py-1 rounded-full border inline-flex items-center gap-1 hover:brightness-95 ${look.chip}`}
                   >
-                    + {s.stage_name}
+                    <span aria-hidden="true">{look.icon}</span>
+                    {s.stage_name}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
       {/* Pipeline + preview */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{label || 'Pipeline'}</h3>
+
+        {/* Guida alla sequenza.
+            Una pipeline si legge in quattro tempi — prendi, estrai, trasforma, salva — ma il
+            catalogo e' un elenco piatto di 111 voci e quell'ordine non si vede da nessuna parte.
+            Qui si mostrano le fasi, quali sono gia' coperte, e la prima cosa che manca perche' la
+            pipeline produca qualcosa. Non impone un ordine: la trasformazione e' facoltativa, e
+            il consiglio parla solo quando c'e' un buco che rende il risultato vuoto. */}
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+          <ol className="flex flex-wrap items-center gap-1.5">
+            {PHASES.map((ph, i) => {
+              const done = advice.covered.has(ph.n);
+              return (
+                <li key={ph.n} className="flex items-center gap-1.5">
+                  <span
+                    title={ph.hint}
+                    className={
+                      'px-2 py-1 rounded-full text-[11px] font-medium border ' +
+                      (done
+                        ? 'bg-white border-slate-300 text-slate-700'
+                        : 'bg-transparent border-dashed border-slate-300 text-slate-400')
+                    }
+                  >
+                    {done ? '✓' : ph.n}. {ph.title}
+                  </span>
+                  {i < PHASES.length - 1 && <span className="text-slate-300" aria-hidden="true">→</span>}
+                </li>
+              );
+            })}
+          </ol>
+          {advice.missing && (
+            <p className="mt-2 text-[11px] text-amber-700">💡 {advice.missing}</p>
+          )}
+        </div>
 
         {pipeline.length === 0 && (
           <p className="text-sm text-slate-400 mb-3">Add stages from the catalogue to begin.</p>
@@ -345,10 +402,13 @@ export default function BuildWizard({
           {pipeline.map((row, idx) => {
             const spec = findSpec(row.stage);
             const args = (spec?.arg_schema || []).map((a) => a.name);
+            const look = lookOf(row.stage, spec?.category);
             return (
-              <li key={idx} className="rounded border border-slate-200 p-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono font-semibold text-slate-800">{row.stage}</span>
+              <li key={idx} className={`rounded border border-slate-200 border-l-4 ${look.bar} p-2.5 bg-white`}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-base leading-none" aria-hidden="true">{look.icon}</span>
+                  <span className="text-sm font-mono font-semibold text-slate-800">{row.stage}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
                   {multiSource && (
                     <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-500">
                       {row._src === 'shared' ? 'shared' : `S${row._src || 1}`}
@@ -364,12 +424,12 @@ export default function BuildWizard({
                   <>
                     {row.stage === 'flatSelect' && (
                       <div className="flex items-center gap-2 mb-1">
-                        <label className="text-xs text-slate-500 w-28 shrink-0">segment</label>
+                        <label className="text-[13px] text-slate-600 w-28 shrink-0">segment</label>
                         <input
                           value={row.args.segmentSelector ?? row.args.selector ?? ''}
                           onChange={(e) => setArg(idx, 'segmentSelector', e.target.value)}
                           placeholder="segment CSS selector"
-                          className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs font-mono"
+                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-[13px] font-mono"
                         />
                       </div>
                     )}
@@ -402,11 +462,11 @@ export default function BuildWizard({
                   <div className="space-y-1">
                     {args.map((n) => (
                       <div key={n} className="flex items-center gap-2">
-                        <label className="text-xs text-slate-500 w-28 shrink-0">{n}</label>
+                        <label className="text-[13px] text-slate-600 w-28 shrink-0">{n}</label>
                         <input
                           value={row.args[n] ?? ''}
                           onChange={(e) => setArg(idx, n, e.target.value)}
-                          className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-[13px]"
                         />
                       </div>
                     ))}
