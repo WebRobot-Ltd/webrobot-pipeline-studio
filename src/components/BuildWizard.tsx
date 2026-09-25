@@ -287,8 +287,12 @@ export default function BuildWizard({
     }
   };
 
+  // Colonne asimmetriche, non meta' e meta'. Il catalogo e' una lista di pastiglie e smette di
+  // migliorare oltre una certa larghezza; la pipeline contiene i campi che si modificano e lo
+  // YAML generato, che invece guadagna da ogni pixel. A meta' schermo il catalogo sprecava
+  // spazio proprio mentre l'anteprima andava a capo.
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr] gap-4 items-start">
       {chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
       {/* Catalogue */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
