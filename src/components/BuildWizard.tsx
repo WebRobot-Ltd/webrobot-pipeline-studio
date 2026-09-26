@@ -17,7 +17,12 @@ import {
   getStageCatalog,
   saveGeneratedPipeline,
   wizardValidate,
+  getPipelineDraft,
+  putPipelineDraft,
+  deletePipelineDraft,
+  generatePipeline,
   TenantStudioError,
+  type PipelineDraft,
 } from '../client';
 import {
   buildYamlFromPipeline,
@@ -27,6 +32,7 @@ import {
   StageSpec,
 } from '../yaml';
 import { WizRuntime } from '../types';
+import { diffLines } from '../lineDiff';
 import FieldEditor from './FieldEditor';
 import OddsMarketsEditor from './OddsMarketsEditor';
 import PythonExtensionsEditor from './PythonExtensionsEditor';
@@ -71,6 +77,7 @@ export default function BuildWizard({
   embedded = false,
   label,
   organizations,
+  draftContext = 'etl:pipeline-designer',
 }: {
   chatSlot?: ReactNode;
   value?: string;
@@ -84,6 +91,11 @@ export default function BuildWizard({
    * e' una scelta.
    */
   organizations?: { id: string; name: string }[];
+  /**
+   * Quale slot di bozza guardare. Tiene separate le proposte dei diversi designer: senza, una
+   * pipeline proposta per Agent Studio comparirebbe qui come se riguardasse quella aperta.
+   */
+  draftContext?: string;
 } = {}) {
   const controlled = value !== undefined && typeof onChange === 'function';
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
@@ -234,6 +246,107 @@ export default function BuildWizard({
     }),
     [pipeline, catalog, runtime, geo, pyExts]);
 
+  // ── Proposta dell'assistente ────────────────────────────────────────────────
+  // L'assistente non tocca questo stato: scrive una bozza lato server e noi la leggiamo. Cosi' il
+  // canale non dipende da quale pannello sia aperto, e una proposta non va persa perche' l'utente ha
+  // chiuso la chat prima che arrivasse.
+  //
+  // Non si applica da sola. Sovrascrivere il canvas di chi sta progettando senza mostrargli cosa
+  // cambia e' il modo piu' rapido per fargli perdere il lavoro senza nemmeno sapere cosa e' successo.
+  const [draft, setDraft] = useState<PipelineDraft | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [askText, setAskText] = useState('');
+  const [askErr, setAskErr] = useState<string | null>(null);
+  // updated_at dell'ultima bozza SCARTATA: senza, il ciclo la riproporrebbe tre secondi dopo.
+  const dismissed = useRef<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      const d = await getPipelineDraft(draftContext);
+      if (!alive) return;
+      if (!d) { setDraft(null); return; }
+      if (d.updated_at && d.updated_at === dismissed.current) return;
+      setDraft((prev) => (prev && prev.updated_at === d.updated_at ? prev : d));
+    };
+    tick();
+    const h = setInterval(tick, 4000);
+    return () => { alive = false; clearInterval(h); };
+  }, [draftContext]);
+
+  /** Applica la proposta al canvas. Il diff l'utente l'ha gia' visto: qui si esegue la sua scelta. */
+  const applyDraft = useCallback(async () => {
+    if (!draft) return;
+    setPipeline(parsePipelineFromYaml(draft.pipeline_yaml));
+    if (draft.pipeline_name && !pipelineName.trim()) setPipelineName(draft.pipeline_name);
+    setDraftOpen(false);
+    setDraft(null);
+    // Consumata: si cancella, altrimenti resta in attesa e ricompare al prossimo giro.
+    try { await deletePipelineDraft(draftContext); } catch { /* la proposta e' gia' applicata */ }
+  }, [draft, draftContext, pipelineName]);
+
+  const dismissDraft = useCallback(async () => {
+    dismissed.current = draft?.updated_at || null;
+    setDraftOpen(false);
+    setDraft(null);
+    try { await deletePipelineDraft(draftContext); } catch { /* verra' sovrascritta */ }
+  }, [draft, draftContext]);
+
+  /**
+   * Campo testuale: una riga di descrizione invece di una conversazione. Scrive nella STESSA bozza,
+   * quindi il percorso di revisione e' identico — si vede il diff e si decide.
+   */
+  const askForPipeline = useCallback(async () => {
+    const prompt = askText.trim();
+    if (!prompt) return;
+    setGenerating(true);
+    setAskErr(null);
+    try {
+      const r = await generatePipeline({ prompt });
+      const y = r?.pipeline_yaml;
+      if (!y) { setAskErr(r?.error || 'No pipeline came back. Try describing the goal more concretely.'); return; }
+      setDraft({
+        context: draftContext,
+        pipeline_name: r.pipeline_name || null,
+        pipeline_yaml: y,
+        note: `From your description: “${prompt}”`,
+        updated_at: new Date().toISOString(),
+      });
+      setDraftOpen(true);
+      setAskText('');
+    } catch (e) {
+      setAskErr(e instanceof TenantStudioError ? `generate → ${e.status}` : 'Generation failed');
+    } finally {
+      setGenerating(false);
+    }
+  }, [askText, draftContext]);
+
+  // Il canvas corrente, pubblicato nello slot GEMELLO (`…:canvas`). Serve perche' l'assistente sappia
+  // cosa l'utente sta costruendo: senza, ogni richiesta ricominciava da zero invece di modificare, e
+  // "aggiungi anche il prezzo" produceva una pipeline nuova che buttava via il resto.
+  //
+  // Passa dalla stessa bozza invece che dal contesto della chat perche' quello e' una chiave breve —
+  // serve anche da etichetta e da elenco di suggerimenti — e infilarci dentro trenta righe di YAML lo
+  // romperebbe. Qui il canale esiste gia' ed e' letto dagli stessi strumenti dell'agente.
+  const publishedCanvas = useRef<string | null>(null);
+  useEffect(() => {
+    if (embedded) return;                       // l'host possiede lo stato: non e' nostro da pubblicare
+    const out = pipeline.length === 0 ? '' : yaml;
+    if (!out || out === publishedCanvas.current) return;
+    // Ritardo: senza, ogni battuta nell'editor di uno stage sarebbe una scrittura.
+    const h = setTimeout(() => {
+      publishedCanvas.current = out;
+      putPipelineDraft({
+        context: `${draftContext}:canvas`,
+        pipeline_name: pipelineName.trim() || null,
+        pipeline_yaml: out,
+        note: "Canvas corrente: lo pubblica il designer, non e' una proposta dell'assistente",
+      }).catch(() => { publishedCanvas.current = null; });   // si riprova al prossimo cambio
+    }, 5000);
+    return () => clearTimeout(h);
+  }, [embedded, pipeline, yaml, pipelineName, draftContext]);
+
   // ── Controlled/embedded value ⇄ onChange plumbing ──────────────────────────
   // `lastYaml` is the last YAML that crossed the boundary in either direction. It
   // breaks the feedback loop: an incoming `value` we already emitted is ignored,
@@ -305,7 +418,92 @@ export default function BuildWizard({
   // spazio proprio mentre l'anteprima andava a capo.
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr] gap-4 items-start">
-      {chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
+      {/* Riga "descrivi o conversa": due modi di chiedere la stessa cosa, un solo canale di ritorno. */}
+      {!embedded && (
+        <div className="lg:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-1 items-center gap-2">
+            <input
+              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Describe what you want to collect — e.g. “every product page of shop.example.com with name, price and EAN”"
+              value={askText}
+              onChange={(e) => setAskText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') askForPipeline(); }}
+              disabled={generating}
+            />
+            <button
+              type="button"
+              onClick={askForPipeline}
+              disabled={generating || !askText.trim()}
+              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              title="Propose a pipeline from this description — you review it before anything changes"
+            >
+              {generating ? 'Proposing…' : 'Propose'}
+            </button>
+          </div>
+          {chatSlot}
+        </div>
+      )}
+      {embedded && chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
+      {askErr && (
+        <p className="lg:col-span-2 text-xs text-rose-600">{askErr}</p>
+      )}
+
+      {/* La proposta in attesa. Compare quando l'assistente ha scritto una bozza: nulla e' cambiato
+          ancora nel canvas, e la si vede prima di decidere. */}
+      {draft && (
+        <div className="lg:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-indigo-900">
+              🤖 The assistant proposes a pipeline
+            </span>
+            {draft.pipeline_name && (
+              <span className="rounded border border-indigo-200 bg-white px-1.5 py-0.5 text-xs text-indigo-700">
+                {draft.pipeline_name}
+              </span>
+            )}
+            <span className="flex-1" />
+            <button type="button" onClick={() => setDraftOpen((v) => !v)}
+              className="rounded-md border border-indigo-300 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
+              {draftOpen ? 'Hide changes' : 'See changes'}
+            </button>
+            <button type="button" onClick={applyDraft}
+              className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+              Apply to the canvas
+            </button>
+            <button type="button" onClick={dismissDraft}
+              className="rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white">
+              Discard
+            </button>
+          </div>
+          {draft.note && <p className="mt-1 text-xs text-indigo-800">{draft.note}</p>}
+          {draftOpen && (
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              {/* Un diff riga per riga, non un semplice "prima/dopo": su una pipeline lunga la
+                  differenza fra due blocchi di YAML e' esattamente la cosa che non si vede a occhio. */}
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-600">Now</p>
+                <pre className="max-h-64 overflow-auto rounded-md border border-slate-200 bg-white p-2 text-[11px] leading-snug">
+                  {diffLines(pipeline.length ? yaml : '', draft.pipeline_yaml).map((l, i) => (
+                    <div key={i} className={l.left === null ? 'bg-emerald-50' : l.changed ? 'bg-amber-50' : ''}>
+                      {l.left ?? ''}
+                    </div>
+                  ))}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-slate-600">Proposed</p>
+                <pre className="max-h-64 overflow-auto rounded-md border border-indigo-200 bg-white p-2 text-[11px] leading-snug">
+                  {diffLines(pipeline.length ? yaml : '', draft.pipeline_yaml).map((l, i) => (
+                    <div key={i} className={l.right === null ? 'bg-rose-50' : l.changed ? 'bg-amber-50' : ''}>
+                      {l.right ?? ''}
+                    </div>
+                  ))}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Catalogue */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">

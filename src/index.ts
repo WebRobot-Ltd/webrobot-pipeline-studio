@@ -9,6 +9,7 @@
 export * from './client';
 export * from './yaml';
 export * from './types';
+export * from './lineDiff';
 
 export { default as ExistingPipelines } from './components/ExistingPipelines';
 export { default as BuildWizard } from './components/BuildWizard';

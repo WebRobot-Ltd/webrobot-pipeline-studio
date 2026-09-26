@@ -129,6 +129,39 @@ export const generatePipeline = (body: unknown) => call<any>('POST', '/generate-
 export const saveGeneratedPipeline = (body: unknown) =>
   call<any>('POST', '/save-generated-pipeline', { body });
 export const reloadPipelines = () => call<any>('POST', '/reload-pipelines');
+
+// ── Bozza proposta dall'assistente ───────────────────────────────────────────
+/**
+ * Il canale fra la chat e il designer. L'assistente scrive una bozza con PUT, il designer la legge
+ * mentre il pannello e' aperto e la PROPONE con un diff; accettata o scartata, si cancella.
+ *
+ * Non passa per `saveGeneratedPipeline`: quello crea un agente e un progetto veri, quindi ogni
+ * tentativo dell'assistente finiva nell'elenco delle pipeline dell'utente.
+ *
+ * `getPipelineDraft` risponde `null` quando non c'e' nulla (l'API restituisce 204): un designer che
+ * chiede ogni pochi secondi non deve distinguere "vuoto" da "errore", in entrambi i casi non c'e'
+ * niente da proporre.
+ */
+export interface PipelineDraft {
+  context: string;
+  pipeline_name: string | null;
+  pipeline_yaml: string;
+  note: string | null;
+  updated_at: string | null;
+}
+export const getPipelineDraft = async (context?: string): Promise<PipelineDraft | null> => {
+  try {
+    const d = await call<PipelineDraft | null>('GET', '/pipeline-draft',
+      { query: context ? { context } : undefined });
+    return d && (d as PipelineDraft).pipeline_yaml ? (d as PipelineDraft) : null;
+  } catch {
+    return null;
+  }
+};
+export const putPipelineDraft = (body: Partial<PipelineDraft>) =>
+  call<any>('PUT', '/pipeline-draft', { body });
+export const deletePipelineDraft = (context?: string) =>
+  call<any>('DELETE', '/pipeline-draft', { query: context ? { context } : undefined });
 export const getStudioInfo = () => call<any>('GET', '/info');
 
 // ── Datasets ─────────────────────────────────────────────────────────────────
