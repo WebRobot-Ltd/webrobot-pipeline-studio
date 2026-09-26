@@ -42,6 +42,24 @@ export interface TenantStudioConfig {
    * leave a reusable credential in server logs and browser history.
    */
   iframeBase?: string;
+  /**
+   * Percorso SAME-ORIGIN da cui l'host dice qual e' il profilo dell'agente progettista.
+   * Deve rispondere `{ id: <number> }`.
+   *
+   * Serve perche' quel profilo e' di SISTEMA: appartiene all'organizzazione della piattaforma, e
+   * l'elenco `/agentic/profiles` e' filtrato per organizzazione del chiamante — quindi un tenant
+   * non lo vede, e cercarlo per nome da qui non puo' funzionare. Verificato il 26-09-2026: con una
+   * chiave tenant l'elenco restituisce due profili, entrambi con organizzazione nulla, e non il
+   * progettista.
+   *
+   * L'host lo risolve con la propria credenziale di piattaforma e ne restituisce il solo id: un
+   * numero non e' un segreto, e il tenant non acquisisce con questo nessun accesso che non avesse.
+   * Stesso motivo e stessa forma di `iframeBase`.
+   *
+   * Assente: si ripiega sull'elenco, che funziona quando il profilo appartiene all'organizzazione
+   * del chiamante (sviluppo, o un cluster BYOC con un profilo proprio).
+   */
+  designerProfileUrl?: string;
 }
 
 let _config: TenantStudioConfig | null = null;
@@ -168,11 +186,29 @@ export const DESIGNER_PROFILE_NAME = 'webrobot-pipeline-designer';
 
 export async function findDesignerProfileId(): Promise<number> {
   if (_designerProfileId) return _designerProfileId;
+
+  // 1. L'host, se sa dirlo. E' la via che funziona per un tenant qualunque.
+  const url = config().designerProfileUrl;
+  if (url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json().catch(() => null);
+      if (j?.id) { _designerProfileId = Number(j.id); return _designerProfileId; }
+    }
+  }
+
+  // 2. Ripiego sull'elenco. ATTENZIONE alla forma della risposta: e'
+  // `{organizationId, count, profiles: [...]}`, non un array e non `{data}`. Leggendo la chiave
+  // sbagliata si ottiene un elenco vuoto e un 404 che sembra "profilo assente" — costato un giro
+  // il 26-09-2026.
   const list = await call<any>('GET', '/agentic/profiles', { platform: true, query: { enabledOnly: 'true' } });
-  const rows: any[] = Array.isArray(list) ? list : (list?.data ?? []);
+  const rows: any[] = Array.isArray(list) ? list : (list?.profiles ?? list?.data ?? []);
   const found = rows.find((r) => r?.name === DESIGNER_PROFILE_NAME);
   if (!found?.id) {
-    throw new TenantStudioError(404, `Agent profile "${DESIGNER_PROFILE_NAME}" not found on this platform`);
+    throw new TenantStudioError(
+      404,
+      `Agent profile "${DESIGNER_PROFILE_NAME}" is not reachable from this account`,
+    );
   }
   _designerProfileId = Number(found.id);
   return _designerProfileId;
