@@ -534,7 +534,10 @@ export default function BuildWizard({
             <option value="shared">shared final part</option>
           </select>
         </div>
-        <div className="max-h-96 overflow-auto space-y-3">
+        {/* Altezza legata alla finestra, non un numero fisso: max-h-96 (384px) su un catalogo di
+            111 stage in otto gruppi mostrava tre voci per gruppo e costringeva a scorrere dentro un
+            riquadro dentro la pagina. Il minimo tiene il riquadro sensato su finestre basse. */}
+        <div className="max-h-[calc(100vh-20rem)] min-h-[24rem] overflow-auto space-y-3">
           {/* Le stesse icone e gli stessi colori delle righe compaiono gia' QUI, nel momento in
               cui si sceglie: e' dove servono di piu'. La categoria grezza del catalogo resta come
               titolo del gruppo, ma sotto ogni voce porta la sua famiglia, che e' normalizzata e
