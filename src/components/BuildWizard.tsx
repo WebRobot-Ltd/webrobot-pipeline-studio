@@ -70,12 +70,20 @@ export default function BuildWizard({
   onChange,
   embedded = false,
   label,
+  organizations,
 }: {
   chatSlot?: ReactNode;
   value?: string;
   onChange?: (yaml: string) => void;
   embedded?: boolean;
   label?: string;
+  /**
+   * Organizzazioni a cui il chiamante puo' assegnare la pipeline. Passate dall'host, non
+   * recuperate qui: elencarle e' una faccenda amministrativa e questo pacchetto parla solo con
+   * /tenant/*. Con meno di due voci il selettore non compare: scegliere fra una sola cosa non
+   * e' una scelta.
+   */
+  organizations?: { id: string; name: string }[];
 } = {}) {
   const controlled = value !== undefined && typeof onChange === 'function';
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
@@ -86,6 +94,8 @@ export default function BuildWizard({
   const [target, setTarget] = useState<TargetSource>(1);
 
   const [pipelineName, setPipelineName] = useState('');
+  // Vuoto = la propria organizzazione, cioe' il comportamento di prima.
+  const [orgId, setOrgId] = useState('');
   const [runtime, setRuntime] = useState<WizRuntime>('spark');
   const [geo, setGeo] = useState('');
   const [pyExts, setPyExts] = useState<PyExtension[]>([]);
@@ -278,6 +288,8 @@ export default function BuildWizard({
         pipeline_name: pipelineName.trim(),
         pipeline_yaml: yaml,
         execute,
+        // Omesso quando non scelto: il server ricade sull'organizzazione del chiamante.
+        ...(orgId ? { organization_id: orgId } : {}),
       });
       setSaveMsg(`Saved as “${pipelineName}”${execute && res?.execution?.execution_id ? ` · run ${res.execution.execution_id}` : ''}.`);
     } catch (e) {
@@ -558,6 +570,22 @@ export default function BuildWizard({
                 placeholder="pipeline name"
                 className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
               />
+              {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
+                  cliente. L'autorizzazione resta del server (canAccessOrganization): questo
+                  selettore e' una comodita', non il controllo. */}
+              {organizations && organizations.length > 1 && (
+                <select
+                  value={orgId}
+                  onChange={(e) => setOrgId(e.target.value)}
+                  title="Organization this pipeline belongs to"
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm max-w-[220px]"
+                >
+                  <option value="">My organization</option>
+                  {organizations.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              )}
               <button onClick={handleValidate}
                 className="text-sm px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
                 Validate
