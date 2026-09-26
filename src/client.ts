@@ -64,6 +64,17 @@ function config(): TenantStudioConfig {
 }
 
 const TENANT = '/api/webrobot/api/tenant';
+/**
+ * Prefisso NON tenant, per le tre rotte agentiche che servono a far progettare una pipeline da un
+ * agente: avviare un run, vederne lo stato, leggerne il risultato.
+ *
+ * Il resto di questo file corrisponde uno a uno a TenantStudioApiV10, e questa e' l'unica
+ * eccezione. Vale la pena dirne il perche': il lavoro agentico non e' una funzione dello studio,
+ * e' una capacita' della piattaforma — gli stessi endpoint che usano la chat e i job pianificati.
+ * Rifarne un doppione sotto /tenant/ avrebbe significato mantenere due strade per avviare la
+ * stessa cosa, che e' la deriva che costa piu' di quanto risparmi.
+ */
+const PLATFORM = '/api/webrobot/api';
 
 export class TenantStudioError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
@@ -75,7 +86,13 @@ export class TenantStudioError extends Error {
 async function call<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
-  opts: { body?: unknown; query?: Record<string, string | number | undefined>; raw?: boolean } = {},
+  opts: {
+    body?: unknown;
+    query?: Record<string, string | number | undefined>;
+    raw?: boolean;
+    /** Punta al prefisso di piattaforma invece che a /tenant. Vedi PLATFORM. */
+    platform?: boolean;
+  } = {},
 ): Promise<T> {
   const { apiBase, getToken } = config();
   const token = getToken();
@@ -89,7 +106,7 @@ async function call<T>(
       ).toString()
     : '';
 
-  const res = await fetch(`${apiBase}${TENANT}${path}${qs}`, {
+  const res = await fetch(`${apiBase}${opts.platform ? PLATFORM : TENANT}${path}${qs}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -129,6 +146,122 @@ export const generatePipeline = (body: unknown) => call<any>('POST', '/generate-
 export const saveGeneratedPipeline = (body: unknown) =>
   call<any>('POST', '/save-generated-pipeline', { body });
 export const reloadPipelines = () => call<any>('POST', '/reload-pipelines');
+
+// ── Progettazione agentica ───────────────────────────────────────────────────
+/**
+ * Fa progettare la pipeline all'agente di SISTEMA `webrobot-pipeline-designer`, che consulta il
+ * catalogo vivo degli stage, guarda la pagina reale e valida prima di consegnare.
+ *
+ * Perche' non un'inferenza singola: quella strada esiste (`generatePipeline`) e ha il vocabolario
+ * degli stage scritto a mano dentro il prompt, quindi cita stage che non esistono, e l'unico
+ * controllo sul suo esito e' che lo YAML si parsi. L'agente invece legge il catalogo, apre il sito,
+ * induce i selettori e li verifica con una prova a vuoto: piu' lento e con un altro esito.
+ *
+ * L'id del profilo NON si cabla: si cerca per nome, perche' su un cluster BYOC quel profilo ha un
+ * id diverso. Se manca, si dice quale nome manca invece di lasciare un errore opaco.
+ */
+export interface AgenticRun { executionId: string }
+
+let _designerProfileId: number | null = null;
+
+export const DESIGNER_PROFILE_NAME = 'webrobot-pipeline-designer';
+
+export async function findDesignerProfileId(): Promise<number> {
+  if (_designerProfileId) return _designerProfileId;
+  const list = await call<any>('GET', '/agentic/profiles', { platform: true, query: { enabledOnly: 'true' } });
+  const rows: any[] = Array.isArray(list) ? list : (list?.data ?? []);
+  const found = rows.find((r) => r?.name === DESIGNER_PROFILE_NAME);
+  if (!found?.id) {
+    throw new TenantStudioError(404, `Agent profile "${DESIGNER_PROFILE_NAME}" not found on this platform`);
+  }
+  _designerProfileId = Number(found.id);
+  return _designerProfileId;
+}
+
+export async function startDesignerRun(goal: string, currentYaml = ''): Promise<AgenticRun> {
+  const profileId = await findDesignerProfileId();
+  return call<AgenticRun>('POST', '/agentic/start', {
+    platform: true,
+    // `inputs` e' una mappa di STRINGHE: i nomi combaciano con i segnaposto del goal_template
+    // del profilo ({goal} e {current_yaml}), quindi cambiarli qui li scollega silenziosamente.
+    body: { profileId, inputs: { goal, current_yaml: currentYaml } },
+  });
+}
+
+export const getAgenticRunStatus = (executionId: string) =>
+  call<any>('GET', `/agentic/${encodeURIComponent(executionId)}`, { platform: true });
+
+/**
+ * Il risultato di un run. Sta nell'ELENCO delle esecuzioni e non nello stato: `/agentic/{eid}`
+ * riporta solo lo stato, mentre `result` compare in `/agentic/executions`. Non e' ovvio, e cercarlo
+ * nello stato e' il primo posto dove si guarda.
+ */
+export async function getAgenticRunResult(executionId: string): Promise<any | null> {
+  const list = await call<any>('GET', '/agentic/executions', { platform: true, query: { limit: 25 } });
+  const rows: any[] = Array.isArray(list) ? list : (list?.data ?? []);
+  const row = rows.find((r) => r?.executionId === executionId);
+  return row ? (row.result ?? null) : null;
+}
+
+/**
+ * Tira fuori la pipeline dal risultato di un run.
+ *
+ * Tre forme da attraversare, e ognuna e' stata vista sul campo il 26-09-2026:
+ *  1. `result` e' `{<nodo>: {<crew>: "<testo>"}}` — si prende il primo testo non vuoto;
+ *  2. il testo puo' essere avvolto in recinti markdown, che l'agente non dovrebbe mettere ma mette;
+ *  3. puo' essere un manifest multi-documento (Project + Pipeline + Job) invece del corpo nudo:
+ *     la skill della piattaforma insegna a consegnare manifest, e l'istruzione del profilo non
+ *     sempre vince. In quel caso si prende lo `spec:` del documento `kind: Pipeline`, che e'
+ *     esattamente il corpo che il designer sa caricare.
+ *
+ * Torna null quando non c'e' niente di utilizzabile: meglio dire "non ho una proposta" che
+ * consegnare al canvas del testo che non e' una pipeline.
+ */
+export function extractPipelineYaml(result: any): string | null {
+  if (!result) return null;
+  let testo: string | null = null;
+  if (typeof result === 'string') testo = result;
+  else {
+    for (const nodo of Object.values(result as Record<string, any>)) {
+      if (typeof nodo === 'string' && nodo.trim()) { testo = nodo; break; }
+      if (nodo && typeof nodo === 'object') {
+        for (const v of Object.values(nodo as Record<string, any>)) {
+          if (typeof v === 'string' && v.trim()) { testo = v; break; }
+        }
+      }
+      if (testo) break;
+    }
+  }
+  if (!testo) return null;
+  let y = testo.trim();
+  if (y.startsWith('NEEDS:')) return null;               // l'agente chiede, non propone
+
+  // recinti markdown, con o senza linguaggio
+  const fence = y.match(/```(?:ya?ml)?\s*\n([\s\S]*?)```/);
+  if (fence) y = fence[1].trim();
+
+  // manifest multi-documento → lo `spec:` del documento kind: Pipeline
+  if (/^\s*(apiVersion|kind)\s*:/m.test(y) && /kind\s*:\s*Pipeline/.test(y)) {
+    const docs = y.split(/^---\s*$/m);
+    const pipelineDoc = docs.find((d) => /kind\s*:\s*Pipeline/.test(d));
+    if (pipelineDoc) {
+      const m = pipelineDoc.match(/^spec\s*:\s*\n([\s\S]*)$/m);
+      if (m) {
+        // Si toglie l'indentazione di `spec:` per riportare le chiavi al primo livello, che e' la
+        // forma che parsePipelineFromYaml si aspetta.
+        const righe = m[1].replace(/\s+$/, '').split('\n');
+        const indent = Math.min(
+          ...righe.filter((r) => r.trim()).map((r) => r.match(/^\s*/)![0].length),
+        );
+        return righe.map((r) => r.slice(indent)).join('\n').trim() || null;
+      }
+    }
+  }
+  // corpo nudo: si taglia l'eventuale prosa prima della prima chiave utile
+  const start = y.search(/^(fetch|pipeline|sources|python_extensions|metadata)\s*:/m);
+  if (start > 0) y = y.slice(start);
+  return y.trim() || null;
+}
 
 // ── Bozza proposta dall'assistente ───────────────────────────────────────────
 /**

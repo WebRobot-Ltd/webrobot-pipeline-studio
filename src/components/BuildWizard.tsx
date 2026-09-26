@@ -20,7 +20,10 @@ import {
   getPipelineDraft,
   putPipelineDraft,
   deletePipelineDraft,
-  generatePipeline,
+  startDesignerRun,
+  getAgenticRunStatus,
+  getAgenticRunResult,
+  extractPipelineYaml,
   TenantStudioError,
   type PipelineDraft,
 } from '../client';
@@ -258,6 +261,8 @@ export default function BuildWizard({
   const [generating, setGenerating] = useState(false);
   const [askText, setAskText] = useState('');
   const [askErr, setAskErr] = useState<string | null>(null);
+  // A che punto e' il run: un'attesa di decine di secondi senza notizie sembra un guasto.
+  const [askPhase, setAskPhase] = useState<string | null>(null);
   // updated_at dell'ultima bozza SCARTATA: senza, il ciclo la riproporrebbe tre secondi dopo.
   const dismissed = useRef<string | null>(null);
 
@@ -294,33 +299,67 @@ export default function BuildWizard({
   }, [draft, draftContext]);
 
   /**
-   * Campo testuale: una riga di descrizione invece di una conversazione. Scrive nella STESSA bozza,
-   * quindi il percorso di revisione e' identico — si vede il diff e si decide.
+   * Campo testuale: una riga di descrizione, e la pipeline la progetta l'AGENTE di sistema.
+   *
+   * Non un'inferenza singola. Quella strada esiste ancora nell'API, ha il vocabolario degli stage
+   * scritto a mano dentro il prompt — quindi cita stage che non esistono — e l'unico controllo sul
+   * suo esito e' che lo YAML si parsi. L'agente invece legge il catalogo vivo, APRE il sito, induce
+   * i selettori e li verifica con una prova a vuoto prima di consegnare. Costa decine di secondi
+   * invece di pochi, e quel tempo si mostra: il pulsante dice a che punto e'.
+   *
+   * Il risultato passa dalla stessa bozza della chat, quindi il percorso di revisione e' identico —
+   * si vede il diff e si decide. Un canale solo, due modi di chiedere.
    */
   const askForPipeline = useCallback(async () => {
     const prompt = askText.trim();
     if (!prompt) return;
     setGenerating(true);
     setAskErr(null);
+    setAskPhase('Starting the designer agent\u2026');
     try {
-      const r = await generatePipeline({ prompt });
-      const y = r?.pipeline_yaml;
-      if (!y) { setAskErr(r?.error || 'No pipeline came back. Try describing the goal more concretely.'); return; }
+      const run = await startDesignerRun(prompt, pipeline.length ? yaml : '');
+      const eid = run?.executionId;
+      if (!eid) { setAskErr('The agent did not start.'); return; }
+      setAskPhase('Reading the stage catalogue, looking at the page\u2026');
+      // Attesa con un tetto: un run che non chiude non deve lasciare il pulsante a girare per
+      // sempre. 4 minuti sono il doppio del piu' lento osservato (26-09-2026: ~70s col browser).
+      const scadenza = Date.now() + 4 * 60 * 1000;
+      let stato = '';
+      while (Date.now() < scadenza) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const st = await getAgenticRunStatus(eid).catch(() => null);
+        stato = String(st?.persistedStatus || st?.status || '');
+        if (['COMPLETED', 'FAILED', 'STOPPED'].includes(stato)) break;
+        setAskPhase(`The agent is working\u2026 (${stato.toLowerCase() || 'running'})`);
+      }
+      if (stato !== 'COMPLETED') {
+        setAskErr(stato ? `The agent run ended as ${stato}.` : 'The agent run timed out.');
+        return;
+      }
+      const result = await getAgenticRunResult(eid);
+      const y = extractPipelineYaml(result);
+      if (!y) {
+        // Un run riuscito senza pipeline utilizzabile NON e' un successo: succede quando l'agente
+        // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga.
+        setAskErr('The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
+        return;
+      }
       setDraft({
         context: draftContext,
-        pipeline_name: r.pipeline_name || null,
+        pipeline_name: null,
         pipeline_yaml: y,
-        note: `From your description: “${prompt}”`,
+        note: `Designed by the agent from: \u201c${prompt}\u201d \u2014 validated against the stage catalogue`,
         updated_at: new Date().toISOString(),
       });
       setDraftOpen(true);
       setAskText('');
     } catch (e) {
-      setAskErr(e instanceof TenantStudioError ? `generate → ${e.status}` : 'Generation failed');
+      setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
     } finally {
       setGenerating(false);
+      setAskPhase(null);
     }
-  }, [askText, draftContext]);
+  }, [askText, draftContext, pipeline, yaml]);
 
   // Il canvas corrente, pubblicato nello slot GEMELLO (`…:canvas`). Serve perche' l'assistente sappia
   // cosa l'utente sta costruendo: senza, ogni richiesta ricominciava da zero invece di modificare, e
@@ -446,6 +485,9 @@ export default function BuildWizard({
       {embedded && chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
       {askErr && (
         <p className="lg:col-span-2 text-xs text-rose-600">{askErr}</p>
+      )}
+      {askPhase && !askErr && (
+        <p className="lg:col-span-2 text-xs text-slate-500">{askPhase}</p>
       )}
 
       {/* La proposta in attesa. Compare quando l'assistente ha scritto una bozza: nulla e' cambiato
