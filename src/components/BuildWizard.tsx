@@ -63,6 +63,17 @@ type TargetSource = number | 'shared';
 const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
 
 /**
+ * Prompt di esempio per il primo uso: si mostrano SOLO a pipeline vuota, e cliccati riempiono il
+ * campo "descrivi". Il nuovo utente che non sa cosa scrivere ha tre partenze concrete davanti,
+ * invece del solo placeholder — e capisce che qui si descrive un obiettivo, non si conosce un DSL.
+ */
+const ESEMPI_DESCRIZIONE = [
+  'Product name, price and image from every product page of a shop',
+  'Title, date and author of the articles on a news site',
+  'Company name, address and phone from a business directory',
+];
+
+/**
  * @param chatSlot optional "design with chat" panel injected by the host — the SAME slot the
  *   agentic studio uses (DesignWithChat is generic; only the context differs, ETL vs agentic).
  *   The package bundles no chat component; the host passes one.
@@ -465,28 +476,55 @@ export default function BuildWizard({
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr] gap-4 items-start">
       {/* Riga "descrivi o conversa": due modi di chiedere la stessa cosa, un solo canale di ritorno. */}
       {!embedded && (
-        <div className="lg:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2">
-            <input
-              className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Describe what you want to collect — e.g. “every product page of shop.example.com with name, price and EAN”"
-              value={askText}
-              onChange={(e) => setAskText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') askForPipeline(); }}
-              disabled={generating}
-            />
-            <button
-              type="button"
-              onClick={askForPipeline}
-              disabled={generating || !askText.trim()}
-              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-              title="Propose a pipeline from this description — you review it before anything changes"
-            >
-              {generating ? 'Designing…' : 'Propose'}
-            </button>
+        <>
+          {/* Cosa sono le due vie. Senza questa riga il nuovo utente vede un campo di testo e due
+              pulsanti senza sapere che descrivere E' la strada facile, e che il catalogo sotto e'
+              l'alternativa a mano. */}
+          <p className="lg:col-span-2 text-sm text-slate-600">
+            <span className="font-medium text-slate-800">Start here:</span> describe what you want to
+            collect and the agent builds the pipeline for you — you review it before anything changes.
+            Prefer to build it by hand? Add stages from the catalogue below.
+          </p>
+          <div className="lg:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-1 items-center gap-2">
+              <input
+                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Describe what you want to collect — e.g. “every product page of shop.example.com with name, price and EAN”"
+                value={askText}
+                onChange={(e) => setAskText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') askForPipeline(); }}
+                disabled={generating}
+              />
+              <button
+                type="button"
+                onClick={askForPipeline}
+                disabled={generating || !askText.trim()}
+                className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                title="Propose a pipeline from this description — you review it before anything changes"
+              >
+                {generating ? 'Designing…' : 'Propose'}
+              </button>
+            </div>
+            {chatSlot}
           </div>
-          {chatSlot}
-        </div>
+          {/* Partenze concrete, solo quando non c'e' ancora nulla e non si sta gia' generando:
+              a chi ha gia' una pipeline o sta descrivendo non servono e farebbero rumore. */}
+          {pipeline.length === 0 && !generating && !draft && (
+            <div className="lg:col-span-2 -mt-1 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-slate-400">Try:</span>
+              {ESEMPI_DESCRIZIONE.map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => setAskText(ex)}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
       {embedded && chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
       {askErr && (
@@ -660,7 +698,11 @@ export default function BuildWizard({
         </div>
 
         {pipeline.length === 0 && (
-          <p className="text-sm text-slate-400 mb-3">Add stages from the catalogue to begin.</p>
+          <p className="text-sm text-slate-400 mb-3">
+            {embedded
+              ? 'Add stages from the catalogue to begin.'
+              : 'Empty for now. Describe what you want above and let the agent build it — or add stages from the catalogue by hand.'}
+          </p>
         )}
 
         <ol className="space-y-2 mb-4">
