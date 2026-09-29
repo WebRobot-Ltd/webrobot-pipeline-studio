@@ -10,7 +10,8 @@
  * not an approximation.
  *
  * This covers the manual/structured flow. The selector-inference sub-wizard (infer-fields,
- * live picker, CMF preview) plugs into the same wizPipeline rows and is ported separately.
+ * live click-to-pick picker, CMF preview) lives in the SelectorPicker component and is wired
+ * per-row here and in FieldEditor — it plugs into the same wizPipeline rows.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
@@ -24,6 +25,7 @@ import {
   getAgenticRunStatus,
   getAgenticRunResult,
   extractPipelineYaml,
+  extractNeeds,
   TenantStudioError,
   type PipelineDraft,
 } from '../client';
@@ -340,8 +342,12 @@ export default function BuildWizard({
       const y = extractPipelineYaml(result);
       if (!y) {
         // Un run riuscito senza pipeline utilizzabile NON e' un successo: succede quando l'agente
-        // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga.
-        setAskErr('The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
+        // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga. Se c'e' la domanda,
+        // la si MOSTRA: dice all'utente cosa chiarire, invece di un generico "descrivi meglio".
+        const needs = extractNeeds(result);
+        setAskErr(needs
+          ? `The agent needs more detail: ${needs}`
+          : 'The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
         return;
       }
       setDraft({

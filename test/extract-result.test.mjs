@@ -4,7 +4,7 @@
 // Copre il bug del 29-09-2026: il result della riga arriva come STRINGA JSON (il campo lato
 // server e' String/JSONB, non un oggetto), quindi l'estrazione DEVE aprirla prima, altrimenti
 // finisce sul canvas il blob JSON grezzo invece della pipeline.
-import { extractPipelineYaml } from '../dist/client.js';
+import { extractPipelineYaml, extractNeeds } from '../dist/client.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -40,4 +40,17 @@ test('extractPipelineYaml', () => {
   assert.equal(extractPipelineYaml(''), null);
   assert.equal(extractPipelineYaml('NEEDS: dammi l\'URL di partenza'), null);
   assert.equal(extractPipelineYaml({ node1: { crew1: 'NEEDS: url' } }), null);
+});
+
+test('extractNeeds', () => {
+  // La domanda dell'agente, senza il prefisso — stringa nuda, oggetto e stringa-JSON.
+  assert.equal(extractNeeds('NEEDS: dammi l\'URL di partenza'), 'dammi l\'URL di partenza');
+  assert.equal(extractNeeds({ node1: { crew1: 'NEEDS: quale sito?' } }), 'quale sito?');
+  assert.equal(extractNeeds(JSON.stringify({ node1: { crew1: 'NEEDS: quali campi?' } })), 'quali campi?');
+  // Una proposta vera NON e' una domanda → null.
+  assert.equal(extractNeeds(YAML), null);
+  assert.equal(extractNeeds({ node1: { crew1: YAML } }), null);
+  assert.equal(extractNeeds(null), null);
+  // NEEDS senza testo → messaggio di ripiego, non stringa vuota.
+  assert.equal(extractNeeds('NEEDS:'), 'The agent needs more detail to design this.');
 });

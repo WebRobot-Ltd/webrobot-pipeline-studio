@@ -264,13 +264,14 @@ export async function getAgenticRunResult(executionId: string): Promise<any | nu
  * Torna null quando non c'e' niente di utilizzabile: meglio dire "non ho una proposta" che
  * consegnare al canvas del testo che non e' una pipeline.
  */
-export function extractPipelineYaml(result: any): string | null {
+/**
+ * Il TESTO grezzo dentro il result di un run, prima di qualunque estrazione. Gestisce le tre forme
+ * viste sul campo: stringa nuda, STRINGA JSON impacchettata (il campo server e' String/JSONB, non
+ * un oggetto — va aperta o la traversata sotto non scatta e si passerebbe al canvas il blob JSON),
+ * e oggetto `{<nodo>: {<crew>: "<testo>"}}` (si prende il primo testo non vuoto). Null se non c'e'.
+ */
+function resultToText(result: any): string | null {
   if (result === null || result === undefined || result === '') return null;
-
-  // Il `result` della riga e' JSONB servito come STRINGA (il campo lato server e' un String, non
-  // un oggetto): se e' un oggetto JSON impacchettato lo si apre qui, altrimenti la traversata
-  // {nodo:{crew:"..."}} qui sotto non scatterebbe mai e si finirebbe per passare al canvas il
-  // blob JSON grezzo. Se non e' JSON, e' gia' il corpo yaml/testo e si prosegue com'e'.
   let r: any = result;
   if (typeof r === 'string') {
     const s = r.trim();
@@ -278,22 +279,35 @@ export function extractPipelineYaml(result: any): string | null {
       try { r = JSON.parse(s); } catch { /* non era JSON: corpo yaml/testo nudo */ }
     }
   }
-
-  let testo: string | null = null;
-  if (typeof r === 'string') testo = r;
-  else {
-    for (const nodo of Object.values(r as Record<string, any>)) {
-      if (typeof nodo === 'string' && nodo.trim()) { testo = nodo; break; }
-      if (nodo && typeof nodo === 'object') {
-        for (const v of Object.values(nodo as Record<string, any>)) {
-          if (typeof v === 'string' && v.trim()) { testo = v; break; }
-        }
+  if (typeof r === 'string') return r.trim() || null;
+  for (const nodo of Object.values(r as Record<string, any>)) {
+    if (typeof nodo === 'string' && nodo.trim()) return nodo.trim();
+    if (nodo && typeof nodo === 'object') {
+      for (const v of Object.values(nodo as Record<string, any>)) {
+        if (typeof v === 'string' && v.trim()) return v.trim();
       }
-      if (testo) break;
     }
   }
+  return null;
+}
+
+/**
+ * La domanda dell'agente quando NON propone ma chiede: risponde `NEEDS: <cosa gli manca>` perche'
+ * la descrizione e' troppo vaga. Torna il testo della domanda (senza il prefisso), o null se il
+ * result e' una proposta vera. Serve a mostrare all'utente COSA chiarire, invece di un generico
+ * "descrivi meglio".
+ */
+export function extractNeeds(result: any): string | null {
+  const testo = resultToText(result);
   if (!testo) return null;
-  let y = testo.trim();
+  const m = testo.match(/^NEEDS:\s*([\s\S]*)$/);
+  return m ? (m[1].trim() || 'The agent needs more detail to design this.') : null;
+}
+
+export function extractPipelineYaml(result: any): string | null {
+  const testo = resultToText(result);
+  if (!testo) return null;
+  let y = testo;
   if (y.startsWith('NEEDS:')) return null;               // l'agente chiede, non propone
 
   // recinti markdown, con o senza linguaggio
