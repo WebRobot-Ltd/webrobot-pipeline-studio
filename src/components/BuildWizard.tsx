@@ -74,6 +74,35 @@ const ESEMPI_DESCRIZIONE = [
 ];
 
 /**
+ * Il run del designer e' un RayJob ASINCRONO: puo' durare piu' dell'attesa inline (4 min) o l'utente
+ * puo' chiudere/navigare via mentre lavora. Per non perdere la proposta si ricorda l'executionId in
+ * localStorage (per contesto) e al montaggio lo si riprende — sia ancora in corso, sia gia' finito.
+ * Solo il run che HAI avviato: e' nel tuo browser. Tutto in try/catch: in modalita' privata o con
+ * lo storage bloccato si prosegue senza ripresa, non si rompe nulla.
+ */
+const RUN_KEY = (ctx: string) => `wr_designer_run:${ctx}`;
+const RUN_MAX_AGE_MS = 30 * 60 * 1000; // oltre mezz'ora un run pendente e' stantio: si scarta
+
+interface RunSalvato { executionId: string; prompt: string; startedAt: number; }
+
+function leggiRun(ctx: string): RunSalvato | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(RUN_KEY(ctx)) : null;
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return v && typeof v.executionId === 'string' ? (v as RunSalvato) : null;
+  } catch { return null; }
+}
+function salvaRun(ctx: string, v: RunSalvato): void {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(RUN_KEY(ctx), JSON.stringify(v)); }
+  catch { /* private mode / quota: si prosegue senza ripresa */ }
+}
+function scartaRun(ctx: string): void {
+  try { if (typeof localStorage !== 'undefined') localStorage.removeItem(RUN_KEY(ctx)); }
+  catch { /* ignore */ }
+}
+
+/**
  * @param chatSlot optional "design with chat" panel injected by the host — the SAME slot the
  *   agentic studio uses (DesignWithChat is generic; only the context differs, ETL vs agentic).
  *   The package bundles no chat component; the host passes one.
@@ -323,34 +352,43 @@ export default function BuildWizard({
    * Il risultato passa dalla stessa bozza della chat, quindi il percorso di revisione e' identico —
    * si vede il diff e si decide. Un canale solo, due modi di chiedere.
    */
-  const askForPipeline = useCallback(async () => {
-    const prompt = askText.trim();
-    if (!prompt) return;
+  /**
+   * Segue un run designer fino all'esito e ne propone il risultato. Condiviso fra l'avvio inline
+   * (`askForPipeline`) e la RIPRESA al montaggio: stessa attesa + estrazione + proposta, cosi' un
+   * run che finisce mentre eravamo via arriva comunque al canvas.
+   *
+   * Controlla lo stato PRIMA di dormire, cosi' un run gia' completato (ripreso) si propone subito.
+   */
+  const seguiRun = useCallback(async (eid: string, promptLabel: string) => {
     setGenerating(true);
     setAskErr(null);
-    setAskPhase('Starting the designer agent\u2026');
+    setAskPhase('The agent is working\u2026');
     try {
-      const run = await startDesignerRun(prompt, pipeline.length ? yaml : '');
-      const eid = run?.executionId;
-      if (!eid) { setAskErr('The agent did not start.'); return; }
-      setAskPhase('Reading the stage catalogue, looking at the page\u2026');
-      // Attesa con un tetto: un run che non chiude non deve lasciare il pulsante a girare per
-      // sempre. 4 minuti sono il doppio del piu' lento osservato (26-09-2026: ~70s col browser).
+      // Tetto sull'attesa INLINE: 4 minuti (il doppio del piu' lento osservato, ~70s col browser).
+      // Se scade ma il run e' ancora vivo NON si perde nulla: resta salvato e un mount successivo
+      // lo riprende \u2014 e' cio' che lo rende un lavoro di background, non un'operazione bloccante.
       const scadenza = Date.now() + 4 * 60 * 1000;
       let stato = '';
       while (Date.now() < scadenza) {
-        await new Promise((r) => setTimeout(r, 5000));
         const st = await getAgenticRunStatus(eid).catch(() => null);
         stato = String(st?.persistedStatus || st?.status || '');
         if (['COMPLETED', 'FAILED', 'STOPPED'].includes(stato)) break;
         setAskPhase(`The agent is working\u2026 (${stato.toLowerCase() || 'running'})`);
+        await new Promise((r) => setTimeout(r, 5000));
       }
       if (stato !== 'COMPLETED') {
-        setAskErr(stato ? `The agent run ended as ${stato}.` : 'The agent run timed out.');
+        if (stato === 'FAILED' || stato === 'STOPPED') {
+          setAskErr(`The agent run ended as ${stato}.`);
+          scartaRun(draftContext);                       // terminale: niente da riprendere
+        } else {
+          // Ancora in corso oltre l'attesa inline: si TIENE salvato, e lo si dice.
+          setAskErr('The agent is taking a while \u2014 you can leave this page; the proposal will appear here when it finishes.');
+        }
         return;
       }
       const result = await getAgenticRunResult(eid);
       const y = extractPipelineYaml(result);
+      scartaRun(draftContext);                            // COMPLETED = consumato, in ogni caso
       if (!y) {
         // Un run riuscito senza pipeline utilizzabile NON e' un successo: succede quando l'agente
         // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga. Se c'e' la domanda,
@@ -365,7 +403,7 @@ export default function BuildWizard({
         context: draftContext,
         pipeline_name: null,
         pipeline_yaml: y,
-        note: `Designed by the agent from: \u201c${prompt}\u201d \u2014 validated against the stage catalogue`,
+        note: `Designed by the agent from: \u201c${promptLabel}\u201d \u2014 validated against the stage catalogue`,
         updated_at: new Date().toISOString(),
       });
       setDraftOpen(true);
@@ -376,7 +414,41 @@ export default function BuildWizard({
       setGenerating(false);
       setAskPhase(null);
     }
-  }, [askText, draftContext, pipeline, yaml]);
+  }, [draftContext]);
+
+  const askForPipeline = useCallback(async () => {
+    const prompt = askText.trim();
+    if (!prompt) return;
+    setAskErr(null);
+    setGenerating(true);
+    setAskPhase('Starting the designer agent\u2026');
+    let eid: string | undefined;
+    try {
+      const run = await startDesignerRun(prompt, pipeline.length ? yaml : '');
+      eid = run?.executionId;
+    } catch (e) {
+      setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
+      setGenerating(false); setAskPhase(null);
+      return;
+    }
+    if (!eid) { setAskErr('The agent did not start.'); setGenerating(false); setAskPhase(null); return; }
+    // Si ricorda SUBITO, prima di attendere: se l'utente chiude durante l'attesa, il run non e' perso.
+    salvaRun(draftContext, { executionId: eid, prompt, startedAt: Date.now() });
+    await seguiRun(eid, prompt);
+  }, [askText, draftContext, pipeline, yaml, seguiRun]);
+
+  // RIPRESA al montaggio: se c'e' un run designer salvato e recente, lo si riprende \u2014 ancora in
+  // corso o gia' finito mentre eravamo via. Il ref evita di rilanciare la ripresa a ogni render.
+  const seguiRunRef = useRef(seguiRun);
+  seguiRunRef.current = seguiRun;
+  useEffect(() => {
+    if (embedded) return;                                 // i run si avviano solo dal designer pieno
+    const stored = leggiRun(draftContext);
+    if (!stored) return;
+    if (Date.now() - stored.startedAt > RUN_MAX_AGE_MS) { scartaRun(draftContext); return; }
+    setAskText((t) => t || stored.prompt);                // mostra cosa era stato chiesto
+    seguiRunRef.current(stored.executionId, stored.prompt);
+  }, [draftContext, embedded]);
 
   // Il canvas corrente, pubblicato nello slot GEMELLO (`…:canvas`). Serve perche' l'assistente sappia
   // cosa l'utente sta costruendo: senza, ogni richiesta ricominciava da zero invece di modificare, e
