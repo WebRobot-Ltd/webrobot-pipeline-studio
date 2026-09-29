@@ -26,6 +26,7 @@ import {
   getAgenticRunResult,
   extractPipelineYaml,
   extractNeeds,
+  extractQuestions,
   TenantStudioError,
   type PipelineDraft,
 } from '../client';
@@ -308,6 +309,12 @@ export default function BuildWizard({
   // updated_at dell'ultima bozza SCARTATA: senza, il ciclo la riproporrebbe tre secondi dopo.
   const dismissed = useRef<string | null>(null);
 
+  // Wizard guidato "2 round" (canale A, senza chat): round 1 l'agente fa 2-4 domande, l'utente
+  // risponde in un mini-form, round 2 l'agente progetta. Per il meno esperto che non sa descrivere.
+  const [guidedQuestions, setGuidedQuestions] = useState<string[] | null>(null);
+  const [guidedAnswers, setGuidedAnswers] = useState<string[]>([]);
+  const [guidedPrompt, setGuidedPrompt] = useState('');
+
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -436,6 +443,99 @@ export default function BuildWizard({
     salvaRun(draftContext, { executionId: eid, prompt, startedAt: Date.now() });
     await seguiRun(eid, prompt);
   }, [askText, draftContext, pipeline, yaml, seguiRun]);
+
+  // \u2500\u2500 Wizard guidato "2 round" (canale A) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // Attende un run fino all'esito e ne torna il result grezzo (o null, gestendo gia' l'errore).
+  // Non salva/riprende come seguiRun: il guidato e' interattivo, l'utente e' qui.
+  const pollUntilResult = useCallback(async (eid: string): Promise<any | null> => {
+    const scadenza = Date.now() + 4 * 60 * 1000;
+    let stato = '';
+    while (Date.now() < scadenza) {
+      const st = await getAgenticRunStatus(eid).catch(() => null);
+      stato = String(st?.persistedStatus || st?.status || '');
+      if (['COMPLETED', 'FAILED', 'STOPPED'].includes(stato)) break;
+      setAskPhase(`The agent is working\u2026 (${stato.toLowerCase() || 'running'})`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    if (stato !== 'COMPLETED') {
+      setAskErr(stato === 'FAILED' || stato === 'STOPPED'
+        ? `The agent run ended as ${stato}.`
+        : 'The agent is taking a while \u2014 try again in a moment.');
+      return null;
+    }
+    return await getAgenticRunResult(eid);
+  }, []);
+
+  // ROUND 1: l'agente non progetta, chiede. Se invece ha gia' progettato (result e' una pipeline),
+  // si salta al canvas: il guidato non deve intralciare quando la descrizione bastava.
+  const startGuided = useCallback(async () => {
+    const prompt = askText.trim();
+    if (!prompt) return;
+    setAskErr(null); setGuidedQuestions(null); setGenerating(true);
+    setAskPhase('Thinking of what to ask you\u2026');
+    try {
+      const goal =
+        'GUIDED SETUP \u2014 STEP 1 of 2. Do NOT design a pipeline yet. Return ONLY a JSON array of 2 to 4 '
+        + 'short, plain-language questions whose answers you need to design a WebRobot ETL pipeline for '
+        + 'this request. No YAML, no prose \u2014 just the JSON array of strings.\n\nRequest: ' + prompt;
+      const run = await startDesignerRun(goal, pipeline.length ? yaml : '');
+      const eid = run?.executionId;
+      if (!eid) { setAskErr('The agent did not start.'); return; }
+      const result = await pollUntilResult(eid);
+      if (result == null) return;
+      const qs = extractQuestions(result);
+      const y = extractPipelineYaml(result);
+      if ((!qs || qs.length === 0) && y) {
+        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y,
+          note: `Designed by the agent from: \u201c${prompt}\u201d`, updated_at: new Date().toISOString() });
+        setDraftOpen(true); return;
+      }
+      if (!qs || qs.length === 0) {
+        setAskErr('The agent did not return questions \u2014 try \u201cPropose\u201d instead.'); return;
+      }
+      setGuidedPrompt(prompt);
+      setGuidedQuestions(qs);
+      setGuidedAnswers(qs.map(() => ''));
+    } catch (e) {
+      setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
+    } finally {
+      setGenerating(false); setAskPhase(null);
+    }
+  }, [askText, pipeline, yaml, draftContext, pollUntilResult]);
+
+  // ROUND 2: con le risposte, l'agente progetta \u2014 stessa proposta/diff/apply del canale A.
+  const submitGuided = useCallback(async () => {
+    if (!guidedQuestions) return;
+    setAskErr(null); setGenerating(true); setAskPhase('Designing from your answers\u2026');
+    try {
+      const qa = guidedQuestions
+        .map((q, i) => `Q: ${q}\nA: ${(guidedAnswers[i] || '').trim() || '(no answer)'}`)
+        .join('\n\n');
+      const goal =
+        'GUIDED SETUP \u2014 STEP 2 of 2. Now design the WebRobot ETL pipeline. Here is the request and the '
+        + "person's answers.\n\nRequest: " + guidedPrompt + '\n\n' + qa;
+      const run = await startDesignerRun(goal, pipeline.length ? yaml : '');
+      const eid = run?.executionId;
+      if (!eid) { setAskErr('The agent did not start.'); return; }
+      const result = await pollUntilResult(eid);
+      if (result == null) return;
+      const y = extractPipelineYaml(result);
+      if (!y) {
+        const needs = extractNeeds(result);
+        setAskErr(needs ? `The agent needs more detail: ${needs}`
+          : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
+        return;
+      }
+      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y,
+        note: 'Designed from your guided answers', updated_at: new Date().toISOString() });
+      setDraftOpen(true);
+      setGuidedQuestions(null); setAskText('');
+    } catch (e) {
+      setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
+    } finally {
+      setGenerating(false); setAskPhase(null);
+    }
+  }, [guidedQuestions, guidedAnswers, guidedPrompt, pipeline, yaml, draftContext, pollUntilResult]);
 
   // RIPRESA al montaggio: se c'e' un run designer salvato e recente, lo si riprende \u2014 ancora in
   // corso o gia' finito mentre eravamo via. Il ref evita di rilanciare la ripresa a ogni render.
@@ -576,9 +676,61 @@ export default function BuildWizard({
               >
                 {generating ? 'Designing…' : 'Propose'}
               </button>
+              {/* Guidato "2 round": per chi non sa descrivere bene. L'agente fa 2-4 domande, poi progetta. */}
+              <button
+                type="button"
+                onClick={startGuided}
+                disabled={generating || !askText.trim()}
+                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                title="Not sure how to describe it? The agent asks you a few questions first, then designs it"
+              >
+                🧭 Guided
+              </button>
             </div>
             {chatSlot}
           </div>
+
+          {/* Mini-form del guidato: le domande dell'agente, una risposta ciascuna, poi "Design it". */}
+          {guidedQuestions && (
+            <div className="lg:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="mb-2 text-sm font-medium text-emerald-900">
+                🧭 A few questions, then I&apos;ll build it
+              </div>
+              <div className="space-y-2">
+                {guidedQuestions.map((q, i) => (
+                  <label key={i} className="block">
+                    <span className="text-xs text-emerald-900">{q}</span>
+                    <input
+                      className="mt-1 w-full rounded-md border border-emerald-200 px-3 py-2 text-sm"
+                      value={guidedAnswers[i] || ''}
+                      onChange={(e) => setGuidedAnswers((a) => { const c = [...a]; c[i] = e.target.value; return c; })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') submitGuided(); }}
+                      disabled={generating}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={submitGuided}
+                  disabled={generating}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {generating ? 'Designing…' : 'Design it'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuidedQuestions(null)}
+                  disabled={generating}
+                  className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <span className="text-xs text-emerald-700">Leave a field blank and I&apos;ll assume a sensible default.</span>
+              </div>
+            </div>
+          )}
           {/* Partenze concrete, solo quando non c'e' ancora nulla e non si sta gia' generando:
               a chi ha gia' una pipeline o sta descrivendo non servono e farebbero rumore. */}
           {pipeline.length === 0 && !generating && !draft && (

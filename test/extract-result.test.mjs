@@ -4,7 +4,7 @@
 // Copre il bug del 29-09-2026: il result della riga arriva come STRINGA JSON (il campo lato
 // server e' String/JSONB, non un oggetto), quindi l'estrazione DEVE aprirla prima, altrimenti
 // finisce sul canvas il blob JSON grezzo invece della pipeline.
-import { extractPipelineYaml, extractNeeds } from '../dist/client.js';
+import { extractPipelineYaml, extractNeeds, extractQuestions } from '../dist/client.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -53,4 +53,19 @@ test('extractNeeds', () => {
   assert.equal(extractNeeds(null), null);
   // NEEDS senza testo → messaggio di ripiego, non stringa vuota.
   assert.equal(extractNeeds('NEEDS:'), 'The agent needs more detail to design this.');
+});
+
+test('extractQuestions', () => {
+  // Array JSON di stringhe (la forma chiesta al round 1), nudo e come stringa-JSON impacchettata.
+  assert.deepEqual(extractQuestions('["Which site?", "Which fields?"]'), ['Which site?', 'Which fields?']);
+  assert.deepEqual(extractQuestions({ node1: { crew1: '["A?","B?"]' } }), ['A?', 'B?']);
+  // Recinto markdown attorno all'array.
+  assert.deepEqual(extractQuestions('```json\n["X?"]\n```'), ['X?']);
+  // Righe "Q:".
+  assert.deepEqual(extractQuestions('Q: first?\nQ: second?'), ['first?', 'second?']);
+  // Singolo NEEDS → una domanda.
+  assert.deepEqual(extractQuestions('NEEDS: which URL?'), ['which URL?']);
+  // Una pipeline non e' un elenco di domande → null (il round 1 ha gia' progettato).
+  assert.equal(extractQuestions(YAML), null);
+  assert.equal(extractQuestions(null), null);
 });

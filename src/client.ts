@@ -304,6 +304,59 @@ export function extractNeeds(result: any): string | null {
   return m ? (m[1].trim() || 'The agent needs more detail to design this.') : null;
 }
 
+/**
+ * Le DOMANDE di chiarimento del designer nel wizard guidato "2 round" (canale A): al round 1
+ * l'agente, invece di progettare, restituisce 2-4 domande. Le si accetta in piu' forme: un array
+ * JSON di stringhe (la forma chiesta), righe che iniziano per "Q:", o un singolo "NEEDS:". Torna
+ * null se non ci sono domande (allora il round 1 ha gia' progettato, e si propone quello).
+ */
+export function extractQuestions(result: any): string[] | null {
+  // NB: unwrapping PROPRIO, non `resultToText` — quello fa JSON.parse anche degli array e li
+  // collassa al primo elemento (Object.values), distruggendo proprio l'elenco di domande. Qui si
+  // apre solo un oggetto `{node:{crew:"<testo>"}}` (o la sua stringa JSON) per arrivare al testo
+  // dell'agente, lasciando intatto un eventuale array `[...]` da fare parsare sotto.
+  if (result === null || result === undefined || result === '') return null;
+  let r: any = result;
+  if (typeof r === 'string') {
+    const s = r.trim();
+    if (s.startsWith('{')) { try { r = JSON.parse(s); } catch { /* resta testo */ } }
+  }
+  let t: string | null = null;
+  if (typeof r === 'string') t = r.trim();
+  else if (r && typeof r === 'object') {
+    for (const nodo of Object.values(r as Record<string, any>)) {
+      if (typeof nodo === 'string' && nodo.trim()) { t = nodo.trim(); break; }
+      if (nodo && typeof nodo === 'object') {
+        for (const v of Object.values(nodo as Record<string, any>)) {
+          if (typeof v === 'string' && v.trim()) { t = v.trim(); break; }
+        }
+        if (t) break;
+      }
+    }
+  }
+  if (!t) return null;
+  const fence = t.match(/```(?:json)?\s*\n([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const i = t.indexOf('[');
+  if (i >= 0) {
+    try {
+      const arr = JSON.parse(t.slice(i));
+      if (Array.isArray(arr)) {
+        const qs = arr.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());
+        if (qs.length) return qs.slice(0, 6);
+      }
+    } catch { /* non era un array JSON: si prova con le righe Q: */ }
+  }
+  const ql = t.split('\n').map((l) => l.trim())
+    .filter((l) => /^Q\s*[:.)\-]/i.test(l))
+    .map((l) => l.replace(/^Q\s*[:.)\-]\s*/i, '').trim())
+    .filter(Boolean);
+  if (ql.length) return ql.slice(0, 6);
+  const m = t.match(/^NEEDS:\s*([\s\S]*)$/);
+  if (m && m[1].trim()) return [m[1].trim()];
+  return null;
+}
+
 export function extractPipelineYaml(result: any): string | null {
   const testo = resultToText(result);
   if (!testo) return null;
