@@ -233,8 +233,19 @@ export const getAgenticRunStatus = (executionId: string) =>
  * nello stato e' il primo posto dove si guarda.
  */
 export async function getAgenticRunResult(executionId: string): Promise<any | null> {
-  const list = await call<any>('GET', '/agentic/executions', { platform: true, query: { limit: 25 } });
-  const rows: any[] = Array.isArray(list) ? list : (list?.data ?? []);
+  // 1. PER ID. Lo stato ora porta il `result` della riga, letto per execution_id: e' la via
+  //    robusta, indipendente da quante esecuzioni ha l'org. Un run appena finito e' qui.
+  try {
+    const st = await getAgenticRunStatus(executionId);
+    if (st && st.result != null && st.result !== '') return st.result;
+  } catch { /* backend precedente senza result nello stato → si ripiega sull'elenco */ }
+
+  // 2. Ripiego per i backend che non mettono ancora il result nello stato. La risposta e'
+  //    `{organizationId, count, executions: [...]}` — la chiave e' `executions`, NON `data`:
+  //    leggerla sbagliata dava sempre elenco vuoto e quindi risultato sempre null. Limite alzato
+  //    perche' qui si PESCA dalla lista, e una finestra stretta perde il run sotto traffico.
+  const list = await call<any>('GET', '/agentic/executions', { platform: true, query: { limit: 100 } });
+  const rows: any[] = Array.isArray(list) ? list : (list?.executions ?? list?.data ?? []);
   const row = rows.find((r) => r?.executionId === executionId);
   return row ? (row.result ?? null) : null;
 }
@@ -254,11 +265,24 @@ export async function getAgenticRunResult(executionId: string): Promise<any | nu
  * consegnare al canvas del testo che non e' una pipeline.
  */
 export function extractPipelineYaml(result: any): string | null {
-  if (!result) return null;
+  if (result === null || result === undefined || result === '') return null;
+
+  // Il `result` della riga e' JSONB servito come STRINGA (il campo lato server e' un String, non
+  // un oggetto): se e' un oggetto JSON impacchettato lo si apre qui, altrimenti la traversata
+  // {nodo:{crew:"..."}} qui sotto non scatterebbe mai e si finirebbe per passare al canvas il
+  // blob JSON grezzo. Se non e' JSON, e' gia' il corpo yaml/testo e si prosegue com'e'.
+  let r: any = result;
+  if (typeof r === 'string') {
+    const s = r.trim();
+    if (s.startsWith('{') || s.startsWith('[')) {
+      try { r = JSON.parse(s); } catch { /* non era JSON: corpo yaml/testo nudo */ }
+    }
+  }
+
   let testo: string | null = null;
-  if (typeof result === 'string') testo = result;
+  if (typeof r === 'string') testo = r;
   else {
-    for (const nodo of Object.values(result as Record<string, any>)) {
+    for (const nodo of Object.values(r as Record<string, any>)) {
       if (typeof nodo === 'string' && nodo.trim()) { testo = nodo; break; }
       if (nodo && typeof nodo === 'object') {
         for (const v of Object.values(nodo as Record<string, any>)) {
