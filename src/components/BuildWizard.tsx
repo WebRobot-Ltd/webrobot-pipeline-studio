@@ -332,13 +332,21 @@ export default function BuildWizard({
   /** Applica la proposta al canvas. Il diff l'utente l'ha gia' visto: qui si esegue la sua scelta. */
   const applyDraft = useCallback(async () => {
     if (!draft) return;
-    setPipeline(parsePipelineFromYaml(draft.pipeline_yaml));
+    const rows = parsePipelineFromYaml(draft.pipeline_yaml, { catalog });
+    // Uno YAML che non si riesce a leggere non deve svuotare il canvas ne' bruciare la bozza:
+    // si lascia la proposta li' (il diff mostra lo YAML) e si dice perche'.
+    if (!rows.length) {
+      setAskErr('The proposal could not be loaded into the canvas (no stages recognised in its YAML).');
+      setDraftOpen(true);
+      return;
+    }
+    setPipeline(rows);
     if (draft.pipeline_name && !pipelineName.trim()) setPipelineName(draft.pipeline_name);
     setDraftOpen(false);
     setDraft(null);
     // Consumata: si cancella, altrimenti resta in attesa e ricompare al prossimo giro.
     try { await deletePipelineDraft(draftContext); } catch { /* la proposta e' gia' applicata */ }
-  }, [draft, draftContext, pipelineName]);
+  }, [draft, draftContext, pipelineName, catalog]);
 
   const dismissDraft = useCallback(async () => {
     dismissed.current = draft?.updated_at || null;
@@ -587,7 +595,7 @@ export default function BuildWizard({
     const incoming = value ?? '';
     if (incoming === lastYaml.current) return;
     lastYaml.current = incoming;
-    setPipeline(parsePipelineFromYaml(incoming));
+    setPipeline(parsePipelineFromYaml(incoming, { catalog }));
   }, [controlled, value]);
 
   // Outgoing: emit regenerated YAML on every edit (empty pipeline → empty string,
@@ -671,7 +679,7 @@ export default function BuildWizard({
                 type="button"
                 onClick={askForPipeline}
                 disabled={generating || !askText.trim()}
-                className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 title="Propose a pipeline from this description — you review it before anything changes"
               >
                 {generating ? 'Designing…' : 'Propose'}
@@ -741,7 +749,7 @@ export default function BuildWizard({
                   key={ex}
                   type="button"
                   onClick={() => setAskText(ex)}
-                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
                 >
                   {ex}
                 </button>
@@ -761,23 +769,23 @@ export default function BuildWizard({
       {/* La proposta in attesa. Compare quando l'assistente ha scritto una bozza: nulla e' cambiato
           ancora nel canvas, e la si vede prima di decidere. */}
       {draft && (
-        <div className="lg:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+        <div className="lg:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-indigo-900">
+            <span className="text-sm font-semibold text-blue-900">
               🤖 The assistant proposes a pipeline
             </span>
             {draft.pipeline_name && (
-              <span className="rounded border border-indigo-200 bg-white px-1.5 py-0.5 text-xs text-indigo-700">
+              <span className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs text-blue-700">
                 {draft.pipeline_name}
               </span>
             )}
             <span className="flex-1" />
             <button type="button" onClick={() => setDraftOpen((v) => !v)}
-              className="rounded-md border border-indigo-300 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">
+              className="rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
               {draftOpen ? 'Hide changes' : 'See changes'}
             </button>
             <button type="button" onClick={applyDraft}
-              className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700">
               Apply to the canvas
             </button>
             <button type="button" onClick={dismissDraft}
@@ -785,7 +793,7 @@ export default function BuildWizard({
               Discard
             </button>
           </div>
-          {draft.note && <p className="mt-1 text-xs text-indigo-800">{draft.note}</p>}
+          {draft.note && <p className="mt-1 text-xs text-blue-800">{draft.note}</p>}
           {draftOpen && (
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               {/* Un diff riga per riga, non un semplice "prima/dopo": su una pipeline lunga la
@@ -802,7 +810,7 @@ export default function BuildWizard({
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-slate-600">Proposed</p>
-                <pre className="max-h-64 overflow-auto rounded-md border border-indigo-200 bg-white p-2 text-[11px] leading-snug">
+                <pre className="max-h-64 overflow-auto rounded-md border border-blue-200 bg-white p-2 text-[11px] leading-snug">
                   {diffLines(pipeline.length ? yaml : '', draft.pipeline_yaml).map((l, i) => (
                     <div key={i} className={l.right === null ? 'bg-rose-50' : l.changed ? 'bg-amber-50' : ''}>
                       {l.right ?? ''}
@@ -862,7 +870,7 @@ export default function BuildWizard({
                   <span className="text-xs text-slate-400">{groupLook.blurb}</span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {stages.map((s) => {
                   const look = lookOf(s.stage_name, s.category);
                   return (
@@ -870,9 +878,12 @@ export default function BuildWizard({
                     key={s.stage_name}
                     onClick={() => addStage(s.stage_name)}
                     title={s.description || `${look.label} — ${look.blurb}`}
-                    className={`text-sm px-2 py-1 rounded-full border inline-flex items-center gap-1 hover:brightness-95 ${look.chip}`}
+                    className={`text-sm font-medium pl-1 pr-3 py-1 rounded-full border inline-flex items-center gap-2 shadow-sm transition hover:-translate-y-px hover:shadow ${look.chip}`}
                   >
-                    <span aria-hidden="true">{look.icon}</span>
+                    <span aria-hidden="true"
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-lg leading-none ring-1 ${look.tile}`}>
+                      {look.icon}
+                    </span>
                     {s.stage_name}
                   </button>
                   );
@@ -894,30 +905,38 @@ export default function BuildWizard({
             Qui si mostrano le fasi, quali sono gia' coperte, e la prima cosa che manca perche' la
             pipeline produca qualcosa. Non impone un ordine: la trasformazione e' facoltativa, e
             il consiglio parla solo quando c'e' un buco che rende il risultato vuoto. */}
-        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-          <ol className="flex flex-wrap items-center gap-1.5">
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <ol className="flex flex-wrap items-center gap-2">
             {PHASES.map((ph, i) => {
               const done = advice.covered.has(ph.n);
               return (
-                <li key={ph.n} className="flex items-center gap-1.5">
+                <li key={ph.n} className="flex items-center gap-2">
                   <span
                     title={ph.hint}
                     className={
-                      'px-2 py-1 rounded-full text-xs font-medium border ' +
+                      'inline-flex items-center gap-2 pl-1 pr-3 py-1 rounded-full text-sm font-medium border ' +
                       (done
-                        ? 'bg-white border-slate-300 text-slate-700'
-                        : 'bg-transparent border-dashed border-slate-300 text-slate-400')
+                        ? 'bg-white border-emerald-300 text-slate-800 shadow-sm'
+                        : 'bg-transparent border-dashed border-slate-300 text-slate-500')
                     }
                   >
-                    {done ? '✓' : ph.n}. {ph.title}
+                    <span aria-hidden="true"
+                      className={'inline-flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none '
+                        + (done ? 'bg-emerald-100' : 'bg-white grayscale opacity-60')}>
+                      {ph.icon}
+                    </span>
+                    {ph.title}
+                    {done && <span className="text-emerald-600" aria-label="done">✓</span>}
                   </span>
-                  {i < PHASES.length - 1 && <span className="text-slate-300" aria-hidden="true">→</span>}
+                  {i < PHASES.length - 1 && <span className="text-lg text-slate-300" aria-hidden="true">→</span>}
                 </li>
               );
             })}
           </ol>
           {advice.missing && (
-            <p className="mt-2 text-xs text-amber-700">💡 {advice.missing}</p>
+            <p className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="text-lg leading-none" aria-hidden="true">💡</span>{advice.missing}
+            </p>
           )}
         </div>
 
@@ -929,26 +948,44 @@ export default function BuildWizard({
           </p>
         )}
 
-        <ol className="space-y-2 mb-4">
+        <ol className="space-y-3 mb-4">
           {pipeline.map((row, idx) => {
             const spec = findSpec(row.stage);
             const args = (spec?.arg_schema || []).map((a) => a.name);
             const look = lookOf(row.stage, spec?.category);
+            const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-base transition disabled:opacity-30';
             return (
-              <li key={idx} className={`rounded border border-slate-200 border-l-4 ${look.bar} p-2.5 bg-white`}>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-base leading-none" aria-hidden="true">{look.icon}</span>
-                  <span className="text-sm font-mono font-semibold text-slate-800">{row.stage}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
-                  {multiSource && (
-                    <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
-                      {row._src === 'shared' ? 'shared' : `S${row._src || 1}`}
+              <li key={idx} className={`rounded-xl border border-slate-200 border-l-4 ${look.bar} p-3 bg-white shadow-sm`}>
+                <div className="flex items-center gap-3 mb-2.5">
+                  <span aria-hidden="true"
+                    className={`relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl leading-none ring-1 ${look.tile}`}>
+                    {look.icon}
+                    <span className="absolute -top-1.5 -left-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-800 px-1 text-[11px] font-semibold text-white">
+                      {idx + 1}
                     </span>
-                  )}
-                  <span className="ml-auto flex gap-1">
-                    <button onClick={() => moveStage(idx, -1)} className="text-sm text-slate-400 hover:text-slate-700">↑</button>
-                    <button onClick={() => moveStage(idx, 1)} className="text-sm text-slate-400 hover:text-slate-700">↓</button>
-                    <button onClick={() => removeStage(idx)} className="text-sm text-red-400 hover:text-red-600">✕</button>
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
+                      {multiSource && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                          {row._src === 'shared' ? 'shared' : `Source ${row._src || 1}`}
+                        </span>
+                      )}
+                    </div>
+                    {look.blurb && <p className="text-sm text-slate-500 truncate">{look.blurb}</p>}
+                  </div>
+                  <span className="ml-auto flex shrink-0 gap-1">
+                    <button onClick={() => moveStage(idx, -1)} disabled={idx === 0}
+                      title="Move up" aria-label="Move up"
+                      className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↑</button>
+                    <button onClick={() => moveStage(idx, 1)} disabled={idx === pipeline.length - 1}
+                      title="Move down" aria-label="Move down"
+                      className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↓</button>
+                    <button onClick={() => removeStage(idx)}
+                      title="Remove stage" aria-label="Remove stage"
+                      className={`${iconBtn} text-red-400 hover:bg-red-50 hover:text-red-600`}>✕</button>
                   </span>
                 </div>
                 {['extract', 'flatSelect'].includes(row.stage) ? (
@@ -967,19 +1004,19 @@ export default function BuildWizard({
                     <div className="flex items-center gap-2 mb-1">
                       <button
                         onClick={() => setPickerFor(idx)}
-                        className="text-sm px-2 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50">
-                        🎯 Pick visually
+                        className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50">
+                        <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
                       </button>
                       {(() => {
                         const fr = pipeline[fetchRowIndexFor(idx)];
                         return (
                           <>
                             {fr?._requires_hitl && (
-                              <span className="text-xs px-1 rounded bg-amber-100 text-amber-700"
+                              <span className="text-sm px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
                                 title={fr._anti_bot_kind || 'anti-bot'}>requires HITL</span>
                             )}
                             {fr?._trace?.length ? (
-                              <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
+                              <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                                 {fr._trace.length} action{fr._trace.length > 1 ? 's' : ''}
                               </span>
                             ) : null}
@@ -1006,38 +1043,38 @@ export default function BuildWizard({
                   <>
                     <button
                       onClick={() => setPickerFor(idx)}
-                      className="mb-1 text-sm px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                      🎯 Pick market box
+                      className="mb-1 inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                      <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick market box
                     </button>
                     <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
                   </>
                 ) : (
-                  <p className="text-xs text-slate-400">no args</p>
+                  <p className="text-sm text-slate-400">no args</p>
                 )}
 
                 {FETCH_STAGES.has(row.stage) && (
                   <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
                     <button
                       onClick={() => setPickerFor(idx)}
-                      title={urlOfRow(row) ? 'Apri la pagina e registra i passaggi' : 'Serve prima un url in questa riga'}
+                      title={urlOfRow(row) ? 'Open the page and record the steps' : 'This row needs a URL first'}
                       disabled={!urlOfRow(row)}
-                      className="text-sm px-2 py-1 rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40">
-                      🎬 Registra azioni
+                      className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                      <span className="text-lg leading-none" aria-hidden="true">🎬</span> Record actions
                     </button>
                     {row._trace?.length ? (
                       <>
-                        <span className="text-xs px-1 rounded bg-slate-100 text-slate-500">
-                          {row._trace.length} azion{row._trace.length > 1 ? 'i' : 'e'} registrat{row._trace.length > 1 ? 'e' : 'a'}
+                        <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                          {row._trace.length} action{row._trace.length > 1 ? 's' : ''} recorded
                         </span>
                         <button
                           onClick={() => setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _trace: undefined } : r)))}
-                          className="text-xs text-slate-400 hover:text-red-600">
-                          svuota
+                          className="text-sm text-slate-500 hover:text-red-600">
+                          clear
                         </button>
                       </>
                     ) : (
-                      <span className="text-xs text-slate-400">
-                        cookie, ricerche, “carica altro”: i passaggi prima dei dati
+                      <span className="text-sm text-slate-500">
+                        cookies, searches, “load more”: the steps before the data
                       </span>
                     )}
                   </div>

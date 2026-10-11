@@ -38,8 +38,8 @@
     }
   },
   "devDependencies": {
-    "typescript": "^5",
-    "@types/react": "^18"
+    "@types/react": "^18",
+    "typescript": "^5"
   },
   "keywords": [
     "webrobot",
@@ -53,5 +53,8 @@
     "type": "git",
     "url": "git+https://github.com/WebRobot-Ltd/webrobot-pipeline-studio.git"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "dependencies": {
+    "yaml": "^2.7.0"
+  }
 }

@@ -10,6 +10,8 @@
  * input, which is what makes it testable without a browser.
  */
 
+import { parseAllDocuments } from 'yaml';
+
 export interface PyExtension {
   name: string;
   functionBody: string;
@@ -605,8 +607,158 @@ function sectionBody(lines: PLine[], startIdx: number): PLine[] {
   return out;
 }
 
-export function parsePipelineFromYaml(yaml: string, _ctx?: YamlContext): PipelineRow[] {
+/* ────────────────────────────────────────────────────────────────────────────
+ * Fallback strutturato — per lo YAML che NON viene dal nostro generatore.
+ *
+ * Le bozze della chat (pipeline_draft) e le pipeline salvate passano dal backend, che serializza
+ * con Jackson: `---` in testa, `- stage: "wget"` a colonna 0, nomi stage quotati, args come mappe a
+ * blocchi, `sources:` come mappa, stringhe lunghe spezzate con `\`. Il parser a righe qui sopra
+ * conosce solo il dialetto che emettiamo noi: su quello YAML restituiva [] e il canvas restava
+ * vuoto. Qui si legge con un parser YAML vero e si mappa sullo stesso modello PipelineRow.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const isObj = (v: unknown): v is Record<string, any> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+function fieldFromObj(o: any): PipelineField | null {
+  if (!isObj(o) || o.selector == null) return null;
+  const f: PipelineField = { selector: String(o.selector) };
+  if (o.method != null) f.method = String(o.method);
+  if (o.as != null) f.as = String(o.as);
+  return f;
+}
+
+const fieldsFrom = (v: unknown): PipelineField[] =>
+  (Array.isArray(v) ? v : []).map(fieldFromObj).filter((f): f is PipelineField => f !== null);
+
+function stageFromObj(s: Record<string, any>, ctx?: YamlContext): PipelineRow | null {
+  if (s.stage == null) return null;
+  const stage = String(s.stage).trim();
+  const raw = s.args;
+  const list: any[] = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+
+  if (stage === 'extract') return { stage, args: {}, _fields: fieldsFrom(list) };
+  if (stage === 'parallelSelect') {
+    const inner = Array.isArray(list[0]) ? list[0] : list;
+    return { stage: 'flatSelect', args: {}, _fields: fieldsFrom(inner).map((f) => ({ ...f, _parallel: true })) };
+  }
+  if (stage === 'flatSelect') {
+    const seg = typeof list[0] === 'string' ? list[0] : '';
+    return { stage, args: { segmentSelector: seg }, _fields: fieldsFrom(list[1]) };
+  }
+  if (stage === 'oddsSelect' || stage === 'odds_select') {
+    const holder = list.find((x) => isObj(x) && Array.isArray(x.markets));
+    const _markets: OddsMarket[] = (holder ? holder.markets : []).filter(isObj).map((m: any) => {
+      const mk: OddsMarket = {
+        label: m.label != null ? String(m.label) : '',
+        enabled: true,
+        sectionSelector: m.sectionSelector != null ? String(m.sectionSelector) : '',
+        fields: fieldsFrom(m.fields),
+      };
+      if (m.rowSelector != null) mk.rowSelector = String(m.rowSelector);
+      return mk;
+    });
+    return { stage, args: {}, _markets };
+  }
+  if (stage === 'dedup') {
+    const col = list[0];
+    return { stage, args: col != null && col !== '' ? { columns: Array.isArray(col) ? col.join(',') : String(col) } : {} };
+  }
+
+  // Generico: i posizionali prendono il nome dall'arg_schema del catalogo (il generatore emette
+  // SOLO gli args con nome, quindi una chiave "0" si perderebbe al primo salvataggio); le mappe
+  // (es. load_parquet `{path, selectColumns}`) si fondono per chiave; una lista di azioni sui
+  // fetch-like e' la trace incorporata.
+  const spec = (ctx?.catalog || []).find((c) => c.stage_name === stage || (c.aliases || []).includes(stage));
+  const names = ((spec && spec.arg_schema) || []).map((a) => a.name);
+  const args: Record<string, any> = {};
+  let _trace: TraceAction[] | undefined;
+  let pos = 0;
+  if (isObj(raw)) Object.assign(args, raw);
+  for (const it of Array.isArray(raw) ? raw : []) {
+    if (Array.isArray(it) && FETCH_LIKE_STAGES.has(stage) && it.every((a) => isObj(a) && a.action)) {
+      const acts = it.map((a) => traceFromInlineMap(Object.fromEntries(
+        Object.entries(a).map(([k, v]) => [k, String(v)])))).filter((a): a is TraceAction => a !== null);
+      if (acts.length) _trace = acts;
+      continue;
+    }
+    if (isObj(it)) { Object.assign(args, it); continue; }
+    args[names[pos] || String(pos)] = Array.isArray(it) ? JSON.stringify(it) : it;
+    pos += 1;
+  }
+  const row: PipelineRow = { stage, args };
+  if (_trace) row._trace = _trace;
+  return row;
+}
+
+const stagesFrom = (v: unknown, ctx?: YamlContext): PipelineRow[] =>
+  (Array.isArray(v) ? v : []).filter(isObj).map((s) => stageFromObj(s, ctx))
+    .filter((r): r is PipelineRow => r !== null);
+
+function parseStructured(text: string, ctx?: YamlContext): PipelineRow[] {
+  let docs: any[];
+  try {
+    docs = parseAllDocuments(text).filter((d) => !d.errors.length).map((d) => d.toJS());
+  } catch { return []; }
+  let root = docs.find((d) => isObj(d) && (d.pipeline || d.sources || isObj(d.spec)));
+  if (!root) return [];
+  if (isObj(root.spec) && !root.pipeline && !root.sources) root = root.spec;
+
+  const rows: PipelineRow[] = [];
+  const src = root.sources;
+  // `sources:` arriva sia come lista `- source: x / pipeline:` (il nostro) sia come mappa (Jackson).
+  const branches: any[] = Array.isArray(src) ? src : isObj(src) ? Object.values(src) : [];
+  if (branches.length) {
+    branches.forEach((b, i) => {
+      for (const r of stagesFrom(isObj(b) ? b.pipeline : null, ctx)) rows.push({ ...r, _src: i + 1 });
+    });
+    for (const r of stagesFrom(root.pipeline, ctx)) rows.push({ ...r, _src: 'shared' });
+  } else {
+    rows.push(...stagesFrom(root.pipeline, ctx));
+  }
+
+  const meta = isObj(root.metadata) ? root.metadata : null;
+  if (meta && meta.requires_hitl === true) {
+    const kinds: string[] = Array.isArray(meta.anti_bot_kinds) ? meta.anti_bot_kinds.map(String) : [];
+    const fetchIdx = rows.map((r, i) => (FETCH_LIKE_STAGES.has(r.stage) ? i : -1)).filter((i) => i >= 0);
+    if (kinds.length) kinds.forEach((k, j) => {
+      const idx = fetchIdx[j];
+      if (idx != null) { rows[idx]._requires_hitl = true; rows[idx]._anti_bot_kind = k; }
+    });
+    else if (fetchIdx.length) rows[fetchIdx[0]]._requires_hitl = true;
+  }
+  return rows;
+}
+
+export function parsePipelineFromYaml(yaml: string, ctx?: YamlContext): PipelineRow[] {
   if (!yaml || !yaml.trim() || yaml.trim() === '(add at least one stage)') return [];
+  const text = String(yaml).replace(/\r\n?/g, '\n')
+    .replace(/^\s*```(?:ya?ml)?\s*\n([\s\S]*?)\n?```\s*$/, '$1');
+  const rows = parseCanonical(text);
+  // Il parser a righe resta il primo (preserva i nomi dai commenti `# name`); se non ha capito il
+  // dialetto — niente righe, nomi stage ancora quotati, o args in linea (`args: ["…"]`) che
+  // scarterebbe in silenzio — si passa al parse strutturato.
+  const inlineArgs = /^[ \t]*args:[ \t]*(?!\[\][ \t]*(#.*)?$)[^\s#]/m.test(text);
+  if (rows.length && !inlineArgs && !rows.some((r) => /^["']/.test(r.stage))) return nameArgs(rows, ctx);
+  const structured = parseStructured(text, ctx);
+  return structured.length ? structured : nameArgs(rows, ctx);
+}
+
+/** Posizionali senza commento `# name` ("0", "1"…) → nome dall'arg_schema, se il catalogo c'e'. */
+function nameArgs(rows: PipelineRow[], ctx?: YamlContext): PipelineRow[] {
+  const catalog = ctx?.catalog || [];
+  if (!catalog.length) return rows;
+  return rows.map((r) => {
+    const spec = catalog.find((c) => c.stage_name === r.stage || (c.aliases || []).includes(r.stage));
+    const names = ((spec && spec.arg_schema) || []).map((a) => a.name);
+    if (!names.length || !Object.keys(r.args).some((k) => /^\d+$/.test(k))) return r;
+    const args: Record<string, any> = {};
+    for (const [k, v] of Object.entries(r.args)) args[/^\d+$/.test(k) && names[+k] ? names[+k] : k] = v;
+    return { ...r, args };
+  });
+}
+
+function parseCanonical(yaml: string): PipelineRow[] {
   const lines = toPLines(String(yaml).split('\n'));
 
   // Top-level anchors.

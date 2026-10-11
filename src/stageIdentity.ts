@@ -25,6 +25,8 @@ export interface FamilyLook {
   /** Classi Tailwind: bordo sinistro colorato, pastiglia, testo. */
   bar: string;
   chip: string;
+  /** Riquadro dietro l'icona: fondo + anello della famiglia, perche' l'emoji si legga a colpo d'occhio. */
+  tile: string;
   /** Una riga che spiega a cosa serve la famiglia, per chi non conosce il vocabolario. */
   blurb: string;
   /** Fase della pipeline a cui appartiene, per la guida alla sequenza. */
@@ -34,47 +36,47 @@ export interface FamilyLook {
 export const FAMILIES: Record<StageFamily, FamilyLook> = {
   acquire: {
     label: 'Acquire', icon: '🌐', phase: 1,
-    bar: 'border-l-blue-500', chip: 'bg-blue-50 text-blue-700 border-blue-200',
+    bar: 'border-l-blue-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Opens web pages and brings them into the pipeline.',
   },
   source: {
     label: 'Source', icon: '🔌', phase: 1,
-    bar: 'border-l-cyan-500', chip: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    bar: 'border-l-cyan-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Pulls data from a service or public dataset, without browsing.',
   },
   extract: {
     label: 'Extract', icon: '🎯', phase: 2,
-    bar: 'border-l-amber-500', chip: 'bg-amber-50 text-amber-700 border-amber-200',
+    bar: 'border-l-amber-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Picks the fields to keep out of a page.',
   },
   intelligent: {
     label: 'AI-assisted', icon: '🧠', phase: 2,
-    bar: 'border-l-violet-500', chip: 'bg-violet-50 text-violet-700 border-violet-200',
+    bar: 'border-l-violet-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Same job, but by understanding the page — no hand-written selectors.',
   },
   transform: {
     label: 'Transform', icon: '⚙️', phase: 3,
-    bar: 'border-l-slate-500', chip: 'bg-slate-100 text-slate-700 border-slate-300',
+    bar: 'border-l-slate-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Cleans, joins, de-duplicates, computes.',
   },
   knowledge: {
     label: 'Knowledge', icon: '📚', phase: 3,
-    bar: 'border-l-indigo-500', chip: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    bar: 'border-l-indigo-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Indexes text so it can be queried later.',
   },
   output: {
     label: 'Destination', icon: '💾', phase: 4,
-    bar: 'border-l-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    bar: 'border-l-emerald-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'Writes the result where you need it.',
   },
   usecase: {
     label: 'Use case', icon: '🧩', phase: null,
-    bar: 'border-l-pink-500', chip: 'bg-pink-50 text-pink-700 border-pink-200',
+    bar: 'border-l-pink-500', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: 'A ready-made block for a specific domain.',
   },
   other: {
     label: 'Other', icon: '▫️', phase: null,
-    bar: 'border-l-slate-300', chip: 'bg-slate-50 text-slate-600 border-slate-200',
+    bar: 'border-l-slate-300', chip: 'bg-slate-50 text-slate-700 border-slate-200', tile: 'bg-slate-100 ring-slate-200',
     blurb: '',
   },
 };
@@ -117,11 +119,11 @@ export const lookOf = (stageName: string, category?: string | null): FamilyLook 
   FAMILIES[familyOf(stageName, category)];
 
 /** Le quattro fasi, nell'ordine in cui una pipeline le attraversa. */
-export const PHASES: { n: 1 | 2 | 3 | 4; title: string; hint: string }[] = [
-  { n: 1, title: 'Take', hint: 'Where the data comes from: a web page or an external service.' },
-  { n: 2, title: 'Extract', hint: 'Which fields to keep out of what you took.' },
-  { n: 3, title: 'Transform', hint: 'Clean, join, compute. Optional.' },
-  { n: 4, title: 'Save', hint: 'Where the result ends up.' },
+export const PHASES: { n: 1 | 2 | 3 | 4; title: string; icon: string; hint: string }[] = [
+  { n: 1, title: 'Take', icon: '🌐', hint: 'Where the data comes from: a web page or an external service.' },
+  { n: 2, title: 'Extract', icon: '🎯', hint: 'Which fields to keep out of what you took.' },
+  { n: 3, title: 'Transform', icon: '⚙️', hint: 'Clean, join, compute. Optional.' },
+  { n: 4, title: 'Save', icon: '💾', hint: 'Where the result ends up.' },
 ];
 
 /**

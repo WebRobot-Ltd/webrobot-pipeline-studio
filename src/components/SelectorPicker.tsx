@@ -1091,9 +1091,9 @@ export default function SelectorPicker({
 
         {/* "Start picking" navigate-first CTA */}
         {intendedMode && loadedUrl && (
-          <div className="flex items-center gap-2 border-b bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+          <div className="flex items-center gap-2 border-b bg-blue-50 px-3 py-2 text-sm text-blue-800">
             <span>Navigate to the target page, then arm selection:</span>
-            <button onClick={promoteToIntendedMode} className="rounded bg-indigo-600 px-3 py-1 text-white">
+            <button onClick={promoteToIntendedMode} className="rounded bg-blue-600 px-3 py-1 text-white">
               📌 Start {intendedMode === 'multi-field' ? 'field selection' : intendedMode === 'multi-sample' ? 'multi-link sampling' : 'selector picking'}
             </button>
           </div>
