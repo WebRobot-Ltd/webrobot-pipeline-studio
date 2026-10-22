@@ -838,15 +838,15 @@ export default function BuildWizard({
       {/* Catalogue */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-700">Stage catalogue</h3>
-          <span className="text-sm text-slate-400">{catalog.length} stages</span>
+          <h3 className="text-base font-bold text-slate-900">Stage catalogue</h3>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{catalog.length} stages</span>
         </div>
         {catalogError && <p className="text-sm text-red-600 mb-2">catalogue failed ({catalogError})</p>}
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="filter stages…"
-          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm mb-2"
+          placeholder="Search stages…"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-2 outline-none focus:border-[#3a5ed6] focus:ring-2 focus:ring-[#3a5ed6]/15"
         />
         <div className="flex items-center gap-2 mb-3 text-sm">
           <span className="text-slate-500">Add to:</span>
@@ -856,7 +856,7 @@ export default function BuildWizard({
               const v = e.target.value;
               setTarget(v === 'shared' ? 'shared' : v === '__new' ? maxSourceNum() + 1 : Number(v));
             }}
-            className="rounded border border-slate-300 px-1.5 py-1"
+            className="rounded-lg border border-slate-300 px-2 py-1.5"
           >
             {Array.from({ length: maxSourceNum() }, (_, i) => i + 1).map((n) => (
               <option key={n} value={n}>Source {n}</option>
@@ -877,13 +877,16 @@ export default function BuildWizard({
             const groupLook = lookOf(stages[0]?.stage_name || '', stages[0]?.category);
             return (
             <div key={cat}>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-sm font-semibold text-slate-600 uppercase tracking-wide">{cat}</span>
+              <div className="sticky top-0 z-[1] flex items-baseline gap-2 bg-white/95 py-1 backdrop-blur">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{cat}</span>
                 {groupLook.blurb && (
-                  <span className="text-xs text-slate-400">{groupLook.blurb}</span>
+                  <span className="truncate text-xs text-slate-400">{groupLook.blurb}</span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
+              {/* Righe, non pastiglie (restyling 10-22): icona della famiglia, nome, una riga di
+                  descrizione e "+ Add" al passaggio — si sceglie leggendo cosa fa lo stage, non
+                  indovinandolo dal nome tecnico. Un clic aggiunge, come prima. */}
+              <div className="space-y-0.5">
                 {stages.map((s) => {
                   const look = lookOf(s.stage_name, s.category);
                   return (
@@ -891,13 +894,19 @@ export default function BuildWizard({
                     key={s.stage_name}
                     onClick={() => addStage(s.stage_name)}
                     title={s.description || `${look.label} — ${look.blurb}`}
-                    className={`text-sm font-medium pl-1 pr-3 py-1 rounded-full border inline-flex items-center gap-2 shadow-sm transition hover:-translate-y-px hover:shadow ${look.chip}`}
+                    className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-slate-200 hover:bg-slate-50"
                   >
                     <span aria-hidden="true"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-lg leading-none ring-1 ${look.tile}`}>
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg leading-none ring-1 ${look.tile}`}>
                       {look.icon}
                     </span>
-                    {s.stage_name}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-mono text-sm font-semibold text-slate-800">{s.stage_name}</span>
+                      <span className="block truncate text-xs text-slate-500">{s.description || look.blurb || look.label}</span>
+                    </span>
+                    <span className="shrink-0 rounded-md bg-[#151b74] px-2 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                      + Add
+                    </span>
                   </button>
                   );
                 })}
@@ -966,7 +975,7 @@ export default function BuildWizard({
             const spec = findSpec(row.stage);
             const args = (spec?.arg_schema || []).map((a) => a.name);
             const look = lookOf(row.stage, spec?.category);
-            const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-base transition disabled:opacity-30';
+            const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold shadow-sm transition disabled:opacity-30 disabled:shadow-none';
             return (
               <li key={idx} className={`rounded-xl border border-slate-200 border-l-4 ${look.bar} p-3 bg-white shadow-sm`}>
                 <div className="flex items-center gap-3 mb-2.5">
@@ -998,7 +1007,7 @@ export default function BuildWizard({
                       className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↓</button>
                     <button onClick={() => removeStage(idx)}
                       title="Remove stage" aria-label="Remove stage"
-                      className={`${iconBtn} text-red-400 hover:bg-red-50 hover:text-red-600`}>✕</button>
+                      className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}>✕</button>
                   </span>
                 </div>
                 {['extract', 'flatSelect'].includes(row.stage) ? (
@@ -1017,7 +1026,7 @@ export default function BuildWizard({
                     <div className="flex items-center gap-2 mb-1">
                       <button
                         onClick={() => setPickerFor(idx)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50">
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-[#3a5ed6]/30 bg-[#3a5ed6]/5 text-[#151b74] hover:bg-[#3a5ed6]/10">
                         <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
                       </button>
                       {(() => {
@@ -1133,7 +1142,7 @@ export default function BuildWizard({
                 value={pipelineName}
                 onChange={(e) => setPipelineName(e.target.value)}
                 placeholder="pipeline name"
-                className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#3a5ed6] focus:ring-2 focus:ring-[#3a5ed6]/15"
               />
               {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
                   cliente. L'autorizzazione resta del server (canAccessOrganization): questo
@@ -1152,20 +1161,20 @@ export default function BuildWizard({
                 </select>
               )}
               <button onClick={handleValidate}
-                className="text-sm px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
-                Validate
+                className="text-sm font-semibold px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50">
+                ✓ Validate
               </button>
             </div>
             {validation && <p className="text-sm text-slate-500 mb-2">{validation}</p>}
 
             <div className="flex gap-2">
               <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
-                className="px-3 py-1.5 rounded border border-slate-300 text-sm disabled:opacity-50">
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
                 {saving ? 'Saving…' : 'Save draft'}
               </button>
               <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
-                className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-50">
-                Save & run
+                className="px-5 py-2 rounded-lg bg-[#151b74] text-white text-sm font-semibold shadow-sm hover:bg-[#0d1150] disabled:opacity-50">
+                Save & run →
               </button>
             </div>
             {saveMsg && <p className="text-sm text-slate-600 mt-2">{saveMsg}</p>}
