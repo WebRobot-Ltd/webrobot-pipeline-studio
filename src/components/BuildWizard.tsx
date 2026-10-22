@@ -660,10 +660,10 @@ export default function BuildWizard({
           {/* HERO "descrivi o conversa" (restyling 10-22, stile Databricks Genie / Snowflake Cortex): la via
               facile — descrivere — e' la protagonista; il catalogo sotto resta l'alternativa a mano. Stessi
               comandi di prima (Propose, Guided, chat), solo piu' visibili. */}
-          <section className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#151b74] via-[#13306e] to-[#1f4fbf] p-6 text-white shadow-lg sm:p-8">
-            <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#5eead4]/20 blur-3xl" />
+          <section className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-950 via-brand-900 to-brand-700 p-6 text-white shadow-lg sm:p-8">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand-400/25 blur-3xl" />
             <div className="relative">
-              <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-[#5eead4]">
+              <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-brand-200">
                 AI pipeline designer
               </span>
               <h2 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">
@@ -697,7 +697,7 @@ export default function BuildWizard({
                     type="button"
                     onClick={askForPipeline}
                     disabled={generating || !askText.trim()}
-                    className="rounded-lg bg-[#151b74] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d1150] disabled:opacity-50"
+                    className="rounded-lg bg-brand-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-950 disabled:opacity-50"
                     title="Propose a pipeline from this description — you review it before anything changes"
                   >
                     {generating ? 'Designing…' : 'Propose →'}
@@ -719,7 +719,7 @@ export default function BuildWizard({
                         className="rounded-xl border border-white/15 bg-white/[0.07] p-3 text-left text-sm text-blue-50 transition hover:border-white/40 hover:bg-white/[0.14]"
                       >
                         {ex}
-                        <span className="mt-2 block text-xs font-semibold text-[#5eead4]">Use this →</span>
+                        <span className="mt-2 block text-xs font-semibold text-brand-200">Use this →</span>
                       </button>
                     ))}
                   </div>
@@ -846,7 +846,7 @@ export default function BuildWizard({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Search stages…"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-2 outline-none focus:border-[#3a5ed6] focus:ring-2 focus:ring-[#3a5ed6]/15"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-2 outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
         />
         <div className="flex items-center gap-2 mb-3 text-sm">
           <span className="text-slate-500">Add to:</span>
@@ -904,7 +904,7 @@ export default function BuildWizard({
                       <span className="block truncate font-mono text-sm font-semibold text-slate-800">{s.stage_name}</span>
                       <span className="block truncate text-xs text-slate-500">{s.description || look.blurb || look.label}</span>
                     </span>
-                    <span className="shrink-0 rounded-md bg-[#151b74] px-2 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                    <span className="shrink-0 rounded-md bg-brand-900 px-2 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
                       + Add
                     </span>
                   </button>
@@ -1026,7 +1026,7 @@ export default function BuildWizard({
                     <div className="flex items-center gap-2 mb-1">
                       <button
                         onClick={() => setPickerFor(idx)}
-                        className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-[#3a5ed6]/30 bg-[#3a5ed6]/5 text-[#151b74] hover:bg-[#3a5ed6]/10">
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-brand-600/30 bg-brand-600/5 text-brand-900 hover:bg-brand-600/10">
                         <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
                       </button>
                       {(() => {
@@ -1142,7 +1142,7 @@ export default function BuildWizard({
                 value={pipelineName}
                 onChange={(e) => setPipelineName(e.target.value)}
                 placeholder="pipeline name"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#3a5ed6] focus:ring-2 focus:ring-[#3a5ed6]/15"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
               />
               {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
                   cliente. L'autorizzazione resta del server (canAccessOrganization): questo
@@ -1173,7 +1173,7 @@ export default function BuildWizard({
                 {saving ? 'Saving…' : 'Save draft'}
               </button>
               <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
-                className="px-5 py-2 rounded-lg bg-[#151b74] text-white text-sm font-semibold shadow-sm hover:bg-[#0d1150] disabled:opacity-50">
+                className="px-5 py-2 rounded-lg bg-brand-900 text-white text-sm font-semibold shadow-sm hover:bg-brand-950 disabled:opacity-50">
                 Save & run →
               </button>
             </div>
