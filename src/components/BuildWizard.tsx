@@ -657,46 +657,76 @@ export default function BuildWizard({
       {/* Riga "descrivi o conversa": due modi di chiedere la stessa cosa, un solo canale di ritorno. */}
       {!embedded && (
         <>
-          {/* Cosa sono le due vie. Senza questa riga il nuovo utente vede un campo di testo e due
-              pulsanti senza sapere che descrivere E' la strada facile, e che il catalogo sotto e'
-              l'alternativa a mano. */}
-          <p className="lg:col-span-2 text-sm text-slate-600">
-            <span className="font-medium text-slate-800">Start here:</span> describe what you want to
-            collect and the agent builds the pipeline for you — you review it before anything changes.
-            Prefer to build it by hand? Add stages from the catalogue below.
-          </p>
-          <div className="lg:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex flex-1 items-center gap-2">
-              <input
-                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
-                placeholder="Describe what you want to collect — e.g. “every product page of shop.example.com with name, price and EAN”"
-                value={askText}
-                onChange={(e) => setAskText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') askForPipeline(); }}
-                disabled={generating}
-              />
-              <button
-                type="button"
-                onClick={askForPipeline}
-                disabled={generating || !askText.trim()}
-                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                title="Propose a pipeline from this description — you review it before anything changes"
-              >
-                {generating ? 'Designing…' : 'Propose'}
-              </button>
-              {/* Guidato "2 round": per chi non sa descrivere bene. L'agente fa 2-4 domande, poi progetta. */}
-              <button
-                type="button"
-                onClick={startGuided}
-                disabled={generating || !askText.trim()}
-                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                title="Not sure how to describe it? The agent asks you a few questions first, then designs it"
-              >
-                🧭 Guided
-              </button>
+          {/* HERO "descrivi o conversa" (restyling 10-22, stile Databricks Genie / Snowflake Cortex): la via
+              facile — descrivere — e' la protagonista; il catalogo sotto resta l'alternativa a mano. Stessi
+              comandi di prima (Propose, Guided, chat), solo piu' visibili. */}
+          <section className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#151b74] via-[#13306e] to-[#1f4fbf] p-6 text-white shadow-lg sm:p-8">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#5eead4]/20 blur-3xl" />
+            <div className="relative">
+              <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-[#5eead4]">
+                AI pipeline designer
+              </span>
+              <h2 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">
+                Describe the data you need. The agent builds the pipeline.
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm text-blue-100 sm:text-base">
+                Describe what you want to collect and the agent builds the pipeline for you — you review it
+                before anything changes. Prefer to build it by hand? Add stages from the catalogue below.
+              </p>
+              <div className="mt-5 flex flex-col gap-2 rounded-xl bg-white p-2 shadow-xl shadow-black/20 sm:flex-row sm:items-center">
+                <input
+                  className="min-w-0 flex-1 rounded-lg border-0 px-3 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400"
+                  placeholder="Describe what you want to collect — e.g. “every product page of shop.example.com with name, price and EAN”"
+                  value={askText}
+                  onChange={(e) => setAskText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') askForPipeline(); }}
+                  disabled={generating}
+                />
+                <div className="flex shrink-0 items-center gap-2">
+                  {/* Guidato "2 round": per chi non sa descrivere bene. L'agente fa 2-4 domande, poi progetta. */}
+                  <button
+                    type="button"
+                    onClick={startGuided}
+                    disabled={generating || !askText.trim()}
+                    className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    title="Not sure how to describe it? The agent asks you a few questions first, then designs it"
+                  >
+                    🧭 Guided
+                  </button>
+                  <button
+                    type="button"
+                    onClick={askForPipeline}
+                    disabled={generating || !askText.trim()}
+                    className="rounded-lg bg-[#151b74] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d1150] disabled:opacity-50"
+                    title="Propose a pipeline from this description — you review it before anything changes"
+                  >
+                    {generating ? 'Designing…' : 'Propose →'}
+                  </button>
+                </div>
+              </div>
+              {chatSlot && <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-blue-100">or {chatSlot}</div>}
+              {/* Partenze concrete, solo quando non c'e' ancora nulla e non si sta gia' generando:
+                  a chi ha gia' una pipeline o sta descrivendo non servono e farebbero rumore. */}
+              {pipeline.length === 0 && !generating && !draft && (
+                <div className="mt-6">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-200">Start from an example</p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                    {ESEMPI_DESCRIZIONE.map((ex) => (
+                      <button
+                        key={ex}
+                        type="button"
+                        onClick={() => setAskText(ex)}
+                        className="rounded-xl border border-white/15 bg-white/[0.07] p-3 text-left text-sm text-blue-50 transition hover:border-white/40 hover:bg-white/[0.14]"
+                      >
+                        {ex}
+                        <span className="mt-2 block text-xs font-semibold text-[#5eead4]">Use this →</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            {chatSlot}
-          </div>
+          </section>
 
           {/* Mini-form del guidato: le domande dell'agente, una risposta ciascuna, poi "Design it". */}
           {guidedQuestions && (
@@ -737,23 +767,6 @@ export default function BuildWizard({
                 </button>
                 <span className="text-xs text-emerald-700">Leave a field blank and I&apos;ll assume a sensible default.</span>
               </div>
-            </div>
-          )}
-          {/* Partenze concrete, solo quando non c'e' ancora nulla e non si sta gia' generando:
-              a chi ha gia' una pipeline o sta descrivendo non servono e farebbero rumore. */}
-          {pipeline.length === 0 && !generating && !draft && (
-            <div className="lg:col-span-2 -mt-1 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-slate-400">Try:</span>
-              {ESEMPI_DESCRIZIONE.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  onClick={() => setAskText(ex)}
-                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  {ex}
-                </button>
-              ))}
             </div>
           )}
         </>
