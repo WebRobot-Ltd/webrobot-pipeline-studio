@@ -75,6 +75,7 @@ type TargetSource = number | 'shared';
 
 /** Stages that carry a source URL — used to seed the visual picker's mirror. */
 const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
+const JOIN_STAGES = ['resilientJoin', 'wgetJoin', 'visitJoin', 'join'];
 
 /**
  * Prompt di esempio per il primo uso: si mostrano SOLO a pipeline vuota, e cliccati riempiono il
@@ -269,16 +270,39 @@ export default function BuildWizard({
   // Typing a URL in a fetch row suggests the catalogue's sites; picking one builds the rest of the
   // lane from the recipe the auto-setup validated — the person then checks and edits every stage
   // (🎯 Pick visually, dry run) instead of inducing selectors from scratch:
-  //   detail fields in the recipe → fetch → wgetJoin/visitJoin(detail link) → extract(detail fields)
+  //   detail fields in the recipe → fetch → resilientJoin(detail link) → extract(detail fields)
   //   otherwise                   → fetch → flatSelect(segment, listing fields)
-  // Following links is a JOIN, never flatSelect + wget($col) (ETL rule 10-06).
+  // Following links is a JOIN, never flatSelect + wget/extract (ETL rule 10-06): after a flatSelect
+  // the page is gone. resilientJoin tries wget first and falls back to the browser per link.
   const [catalogSites, setCatalogSites] = useState<CatalogSite[] | null>(null);
   const [recipeNote, setRecipeNote] = useState<Record<number, string>>({});
   const [recipeSearch, setRecipeSearch] = useState<Record<number, { template: string; q: string }>>({});
+  const [recipeDetail, setRecipeDetail] = useState<Record<number, string>>({});   // fetch idx → detail link selector
   const loadCatalogSites = () => {
     if (catalogSites) return;
     setCatalogSites([]);
     listCatalogSites().then(setCatalogSites).catch(() => setCatalogSites([]));
+  };
+  // Join args by stage: resilientJoin takes linkSelector, wgetJoin/visitJoin selector + joinType.
+  const joinArgs = (stage: string, linkSel: string, prev: Record<string, any> = {}) =>
+    stage === 'resilientJoin'
+      ? { ...prev, linkSelector: linkSel }
+      : { ...prev, selector: linkSel, joinType: prev.joinType || 'LeftOuter' };
+  /** Turn the flatSelect at `f` into resilientJoin(item link) + extract: the item pages get opened and
+   *  read, instead of an extract after a flatSelect that has no page left to read. */
+  const flatSelectToJoin = (f: number, linkSel?: string) => {
+    setPipeline((prev) => {
+      const r = prev[f];
+      if (!r || r.stage !== 'flatSelect') return prev;
+      const seg = r.args?.segmentSelector || r.args?.selector || '';
+      const link = linkSel || (seg ? `${seg} a` : 'a');
+      const next = [...prev];
+      next[f] = { stage: 'resilientJoin', args: { linkSelector: link }, _src: r._src } as PipelineRow;
+      const after = next[f + 1];
+      if (!(after && after._src === r._src && after.stage === 'extract'))
+        next.splice(f + 1, 0, { stage: 'extract', args: {}, _src: r._src, _fields: [] } as PipelineRow);
+      return next;
+    });
   };
   const toPF = (fs?: { selector: string; as?: string; method?: string }[]): PipelineField[] =>
     (fs || []).filter((f) => f?.selector).map((f) => ({ selector: f.selector, as: f.as, method: f.method || 'text' }));
@@ -304,7 +328,7 @@ export default function BuildWizard({
     const detail = toPF(sel.detail_fields);
     const link = sel.detail_link?.selector;
     const useDetail = detail.length > 0 && !!link;
-    const joinStage = browser ? 'visitJoin' : 'wgetJoin';
+    const joinStage = 'resilientJoin';
     setPipeline((prev) => {
       const src = prev[idx]?._src;
       const next = [...prev];
@@ -317,8 +341,8 @@ export default function BuildWizard({
       };
       if (useDetail) {
         const linkSel = sel.segment && !link.startsWith('$') ? `${sel.segment} ${link}` : link;
-        const j = ensureAt(idx + 1, ['wgetJoin', 'visitJoin', 'resilientJoin'], { stage: joinStage, args: {}, _src: src } as PipelineRow);
-        next[j] = { ...next[j], args: { ...next[j].args, selector: linkSel, joinType: next[j].args.joinType || 'LeftOuter' } };
+        const j = ensureAt(idx + 1, JOIN_STAGES, { stage: joinStage, args: {}, _src: src } as PipelineRow);
+        next[j] = { ...next[j], args: joinArgs(next[j].stage, linkSel, next[j].args) };
         const k = ensureAt(j + 1, ['extract'], { stage: 'extract', args: {}, _src: src } as PipelineRow);
         next[k] = { ...next[k], _fields: detail };
       } else {
@@ -326,6 +350,11 @@ export default function BuildWizard({
         next[j] = { ...next[j], args: { ...next[j].args, segmentSelector: sel.segment || next[j].args.segmentSelector || '' }, _fields: listing };
       }
       return next;
+    });
+    setRecipeDetail((m) => {
+      const n = { ...m };
+      if (!useDetail && link) n[idx] = sel.segment && !link.startsWith('$') ? `${sel.segment} ${link}` : link; else delete n[idx];
+      return n;
     });
     const when = sel.validated_at ? ` (validated ${sel.validated_at})` : '';
     const what = useDetail
@@ -792,6 +821,20 @@ export default function BuildWizard({
     [pipeline, catalog],
   );
 
+  /** extract rows that come after a flatSelect in the same lane with no join in between: they have no
+   *  page to read (the flatSelect consumed it). Index of the offending flatSelect, per lane. */
+  const flatExtractIssues = useMemo(() => {
+    const out: number[] = [];
+    const lastFlat = new Map<string, number>();
+    pipeline.forEach((r, i) => {
+      const lane = String(r._src ?? 1);
+      if (FETCH_STAGES.has(r.stage) || JOIN_STAGES.includes(r.stage)) lastFlat.delete(lane);
+      else if (r.stage === 'flatSelect') lastFlat.set(lane, i);
+      else if (r.stage === 'extract' && lastFlat.has(lane)) { out.push(lastFlat.get(lane)!); lastFlat.delete(lane); }
+    });
+    return out;
+  }, [pipeline]);
+
   const handleValidate = async () => {
     setBottomTab('data');
     setValidation('Running the pipeline on the real site (dry run)…');
@@ -948,6 +991,21 @@ export default function BuildWizard({
               })}
               {recipeNote[idx] && (
                 <p className="mt-1 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900">{recipeNote[idx]}</p>
+              )}
+              {recipeDetail[idx] && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-white px-3 py-2">
+                  <span className="text-sm text-slate-600">The catalogue also knows each item's link. Need data from the item pages?</span>
+                  <button type="button"
+                    onClick={() => {
+                      const f = pipeline.findIndex((r, i) => i > idx && r.stage === 'flatSelect' && r._src === row._src);
+                      if (f >= 0) flatSelectToJoin(f, recipeDetail[idx]);
+                      setRecipeDetail((m) => { const n = { ...m }; delete n[idx]; return n; });
+                    }}
+                    className="rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-sm font-medium text-brand-800 hover:bg-brand-100">
+                    Open each item's page instead
+                  </button>
+                  <span className="text-xs text-slate-500">→ resilientJoin (wget, browser if it fails) + extract: pick the detail fields visually</span>
+                </div>
               )}
               {recipeSearch[idx] && (() => {
                 const rs = recipeSearch[idx];
@@ -1482,6 +1540,17 @@ export default function BuildWizard({
               );
             })}
           </ol>
+          {flatExtractIssues.map((f) => (
+            <p key={f} className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="text-lg leading-none" aria-hidden="true">⚠️</span>
+              Stage {f + 1} (flatSelect) is followed by an extract: after a flatSelect there is no page left to read.
+              To read each item's page, follow its link with a join.
+              <button type="button" onClick={() => flatSelectToJoin(f)}
+                className="rounded-md border border-amber-300 bg-white px-2.5 py-0.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
+                Use resilientJoin instead
+              </button>
+            </p>
+          ))}
           {advice.missing && (
             <p className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <span className="text-lg leading-none" aria-hidden="true">💡</span>{advice.missing}
