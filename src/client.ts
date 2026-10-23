@@ -147,6 +147,42 @@ async function call<T>(
 export const listPipelines = () => call<any>('GET', '/list');
 export const getStageCatalog = () => call<any>('GET', '/catalog/stages');
 
+/** A site of the curated source catalogue (GET /catalog/sources). `selectors` is the recipe the
+ *  auto-setup validated (segment / fields / search / pagination / detail_link); the platform
+ *  returns it only to data-engineering callers. */
+export interface CatalogSite {
+  name: string;
+  url: string;
+  domain: string;
+  country?: string;
+  category?: string;
+  topic?: string;
+  fetch_method?: string;
+  anti_bot?: string;
+  ready?: boolean;
+  legal_status?: 'ok' | 'licence' | 'unverified';
+  selectors?: {
+    segment?: string;
+    fields?: { selector: string; as?: string; method?: string }[];
+    search?: { url_template?: string };
+    validated?: boolean;
+    validated_at?: string;
+    recipe_status?: string;
+  } | null;
+}
+
+/** Every catalogue site, metadata only (for the URL helper's suggestions). */
+export const listCatalogSites = () =>
+  call<{ data: CatalogSite[] }>('GET', '/catalog/sources', {
+    platform: true, query: { includeSelectors: 'false', includeLicensed: 'true', limit: 2000 },
+  }).then((r) => r?.data || []);
+
+/** One site's rows WITH the recipe. */
+export const getCatalogRecipe = (domain: string) =>
+  call<{ data: CatalogSite[] }>('GET', '/catalog/sources', {
+    platform: true, query: { domain, includeSelectors: 'true', includeLicensed: 'true', limit: 5 },
+  }).then((r) => (r?.data || []).find((s) => s.selectors?.segment || s.selectors?.fields?.length) || r?.data?.[0] || null);
+
 // ── Execution ────────────────────────────────────────────────────────────────
 export const executePipeline = (pipelineName: string, body: unknown) =>
   call<any>('POST', `/execute/${encodeURIComponent(pipelineName)}`, { body });

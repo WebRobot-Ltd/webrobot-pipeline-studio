@@ -16,6 +16,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getStageCatalog,
+  listCatalogSites,
+  getCatalogRecipe,
+  type CatalogSite,
   saveGeneratedPipeline,
   wizardValidate,
   getPipelineDraft,
@@ -262,6 +265,45 @@ export default function BuildWizard({
   const pickFieldToPF = (f: PickField): PipelineField => ({
     selector: f.selector, as: f.as, method: f.method, _parallel: f._parallel,
   });
+  // ── URL helper from the source catalogue ─────────────────────────────────────
+  // Typing a URL in a fetch row suggests the catalogue's sites; picking one fills the row with the
+  // recipe the auto-setup validated (extraction segment + fields), ready to be checked visually
+  // with 🎯 Pick visually or a dry run — instead of inducing selectors from scratch.
+  const [catalogSites, setCatalogSites] = useState<CatalogSite[] | null>(null);
+  const [recipeNote, setRecipeNote] = useState<Record<number, string>>({});
+  const loadCatalogSites = () => {
+    if (catalogSites) return;
+    setCatalogSites([]);
+    listCatalogSites().then(setCatalogSites).catch(() => setCatalogSites([]));
+  };
+  const applyCatalogSite = async (idx: number, site: CatalogSite) => {
+    const full = await getCatalogRecipe(site.domain).catch(() => null);
+    const sel = full?.selectors;
+    const fetchRow = pipeline[idx];
+    const notes: string[] = [];
+    if (full?.legal_status === 'licence') notes.push('⚠ Its terms restrict automated collection: you need a licence to use this data.');
+    if (full?.fetch_method === 'browser' && fetchRow?.stage !== 'visit') notes.push('The catalogue fetches this site with a browser: consider a visit stage.');
+    if (!sel?.segment && !sel?.fields?.length) {
+      setRecipeNote((m) => ({ ...m, [idx]: ['No extraction recipe in the catalogue for this site yet — pick the fields visually.', ...notes].join(' ') }));
+      return;
+    }
+    const fields: PipelineField[] = (sel.fields || []).map((f) => ({ selector: f.selector, as: f.as, method: f.method || 'text' }));
+    setPipeline((prev) => {
+      const src = prev[idx]?._src;
+      // the extraction row this URL feeds: the next flatSelect in the same lane, else a new one
+      let j = prev.findIndex((r, i) => i > idx && r.stage === 'flatSelect' && r._src === src);
+      const next = [...prev];
+      if (j < 0) {
+        next.splice(idx + 1, 0, { stage: 'flatSelect', args: {}, _src: src } as PipelineRow);
+        j = idx + 1;
+      }
+      next[j] = { ...next[j], args: { ...next[j].args, segmentSelector: sel.segment || next[j].args.segmentSelector || '' }, _fields: fields };
+      return next;
+    });
+    const when = sel.validated_at ? ` (validated ${sel.validated_at})` : '';
+    setRecipeNote((m) => ({ ...m, [idx]: [`Recipe from the catalogue${when}: ${fields.length} field${fields.length === 1 ? '' : 's'} filled in — check them with 🎯 Pick visually or a dry run.`, ...notes].join(' ') }));
+  };
+
   const pfToPickField = (f: PipelineField): PickField => ({
     selector: f.selector, as: f.as || '', method: f.method || 'text', _parallel: f._parallel,
   });
@@ -849,16 +891,32 @@ export default function BuildWizard({
             </>
           ) : args.length > 0 ? (
             <div className="space-y-1">
-              {args.map((n) => (
+              {args.map((n) => {
+                // fetch/wget name it `urlExtractor` in the stage catalogue, visit `url`
+                const urlArg = FETCH_STAGES.has(row.stage) && /url/i.test(n);
+                return (
                 <div key={n} className="flex items-center gap-2">
                   <label className="text-sm text-slate-600 w-28 shrink-0">{n}</label>
                   <input
                     value={row.args[n] ?? ''}
-                    onChange={(e) => setArg(idx, n, e.target.value)}
+                    list={urlArg ? 'wr-catalog-sites' : undefined}
+                    placeholder={urlArg ? 'https://… or start typing a site from the catalogue' : undefined}
+                    onFocus={urlArg ? loadCatalogSites : undefined}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setArg(idx, n, v);
+                      if (!urlArg || !catalogSites?.length) return;
+                      const hit = catalogSites.find((s) => s.url === v);
+                      if (hit) applyCatalogSite(idx, hit);
+                    }}
                     className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
                   />
                 </div>
-              ))}
+                );
+              })}
+              {recipeNote[idx] && (
+                <p className="mt-1 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900">{recipeNote[idx]}</p>
+              )}
             </div>
           ) : row.stage === 'oddsSelect' || row.stage === 'odds_select' ? (
             <>
@@ -910,6 +968,13 @@ export default function BuildWizard({
   // spazio proprio mentre l'anteprima andava a capo.
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr] gap-4 items-start">
+      <datalist id="wr-catalog-sites">
+        {(catalogSites || []).map((s) => (
+          <option key={s.name} value={s.url}>
+            {`${s.domain} · ${s.category || ''}${s.topic ? ' / ' + s.topic : ''}${s.legal_status === 'licence' ? ' · licence' : ''}`}
+          </option>
+        ))}
+      </datalist>
       {/* Riga "descrivi o conversa": due modi di chiedere la stessa cosa, un solo canale di ritorno. */}
       {!embedded && (
         <>
