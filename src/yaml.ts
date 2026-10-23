@@ -65,6 +65,48 @@ export interface YamlContext {
   runtime?: string;   // 'spark' (default, omitted) | 'ray_actor'
   geo?: string;       // 2-letter country code, or empty
   hitlAwait?: boolean;
+  /** How the sources are put together at the merge point (multi-source only); absent/union = default. */
+  combine?: CombineSpec | null;
+}
+
+/** `combine:` of a multi-source pipeline (parser 10-23): union | intersect | except | join. */
+export interface CombineSpec {
+  type: 'union' | 'intersect' | 'except' | 'join';
+  key?: string;
+  fields?: string[];
+  how?: 'inner' | 'left';
+  min_sources?: number;
+}
+
+/** YAML lines for `combine:` (none for a plain union). */
+function combineLines(c?: CombineSpec | null): string[] {
+  if (!c || !c.type || c.type === 'union') return [];
+  const parts = [`type: ${c.type}`];
+  if (c.key) parts.push(`key: ${yamlScalar(c.key)}`);
+  if (c.type === 'join' && c.fields?.length) parts.push(`fields: [${c.fields.map(yamlScalar).join(', ')}]`);
+  if (c.type === 'join' && c.how) parts.push(`how: ${c.how}`);
+  if (c.type === 'intersect' && c.min_sources) parts.push(`min_sources: ${c.min_sources}`);
+  return [`combine: { ${parts.join(', ')} }`];
+}
+
+/** Read `combine:` back from a pipeline YAML (string form or inline map); null when absent. */
+export function parseCombineFromYaml(yaml: string): CombineSpec | null {
+  const m = /^combine:[ \t]*(.*)$/m.exec(String(yaml || ''));
+  if (!m) return null;
+  const v = m[1].trim();
+  if (/^(union|intersect|except|join)$/.test(v)) return { type: v as CombineSpec['type'] };
+  const body = /^\{(.*)\}$/.exec(v)?.[1];
+  if (body == null) return null;
+  const get = (k: string) => new RegExp(`(?:^|,)\\s*${k}\\s*:\\s*([^,\\[\\]]+|\\[[^\\]]*\\])`).exec(body)?.[1]?.trim().replace(/^['"]|['"]$/g, '');
+  const type = (get('type') || 'union') as CombineSpec['type'];
+  const fields = get('fields');
+  return {
+    type,
+    key: get('key') || undefined,
+    fields: fields ? fields.replace(/^\[|\]$/g, '').split(',').map((f) => f.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean) : undefined,
+    how: (get('how') as CombineSpec['how']) || undefined,
+    min_sources: get('min_sources') ? Number(get('min_sources')) : undefined,
+  };
 }
 
 const FETCH_LIKE_STAGES = new Set(['fetch', 'visit', 'wget']);
@@ -165,6 +207,7 @@ function buildSourcesYaml(pipeline: PipelineRow[], ctx: YamlContext): string {
     for (const l of pipelineSectionLines(buildYamlFromPipeline(stripBoundaryFlags(tail), ctx)))
       lines.push(l);
   }
+  for (const cl of combineLines(ctx.combine)) lines.push(cl);
   lines.push('output:');
   lines.push('  format: parquet');
   lines.push('  mode: overwrite');

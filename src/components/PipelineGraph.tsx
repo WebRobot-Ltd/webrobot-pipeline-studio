@@ -19,7 +19,7 @@ const COL = 270;   // horizontal step between stages
 const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
-  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions,
+  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions, combineLabel, onMergeClick,
 }: {
   pipeline: PipelineRow[];
   lookOf: (stage: string) => GraphLook;
@@ -30,6 +30,9 @@ export default function PipelineGraph({
   onAddTo: (src: number | 'shared') => void;
   /** canvas height in px, or a CSS length (the expanded view passes a viewport height) */
   height?: number | string;
+  /** what the merge node shows (default 'union · automatic') and its click (→ combine form) */
+  combineLabel?: string;
+  onMergeClick?: () => void;
   /** right-click menu actions on a stage node (optional) */
   actions?: {
     sources: number;                                   // lanes available (Source 1..n)
@@ -129,11 +132,11 @@ export default function PipelineGraph({
       const my = ((laneNums.length - 1) * ROW) / 2;
       // The engine UNIONS the sources here by itself (unionByName, rows tagged with a `source` column):
       // no union stage is needed — say so on the node (user 10-23).
-      ns.push({ id: 'merge', position: pos('merge', mx, my), selectable: false,
+      ns.push({ id: 'merge', position: pos('merge', mx, my), selectable: !!onMergeClick,
         data: { label: (
           <span className="block text-left" title="Automatic: the rows of every source are put together, columns matched by name; each row keeps a `source` column. No union stage needed.">
-            <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">⟹ union · automatic</span>
-            <span className="block text-[11px] leading-snug text-slate-600">all sources' rows, columns by name, + <code>source</code></span>
+            <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">⟹ {combineLabel || 'union · automatic'}</span>
+            <span className="block text-[11px] leading-snug text-slate-600">{!combineLabel || combineLabel.startsWith('union') ? <>all sources' rows, columns by name, + <code>source</code></> : 'click to change how sources combine'}</span>
           </span>
         ) },
         style: { width: 170, borderRadius: 12, background: '#eef2ff', border: '1px solid #c7d2fe', padding: 8 } });
@@ -179,7 +182,7 @@ export default function PipelineGraph({
     // default handles are bottom/top, which made every arc loop under and over the nodes).
     for (const n of ns) { n.sourcePosition = Position.Right; n.targetPosition = Position.Left; }
     return { nodes: ns, edges: es };
-  }, [pipeline, lookOf, run, selected, moved, onRemove]);
+  }, [pipeline, lookOf, run, selected, moved, onRemove, combineLabel]);
 
   if (!pipeline.length) {
     return <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No stages yet — describe what you want, or add stages from the catalogue.</p>;
@@ -213,6 +216,7 @@ export default function PipelineGraph({
           const id = String(n.id);
           setMenu(null);
           if (/^s\d+$/.test(id)) onSelect(Number(id.slice(1)));
+          else if (id === 'merge') onMergeClick?.();
           else if (id.startsWith('add-')) onAddTo(id === 'add-shared' ? 'shared' : Number(id.slice(4)));
         }}
       >

@@ -44,6 +44,8 @@ import {
 import {
   buildYamlFromPipeline,
   parsePipelineFromYaml,
+  parseCombineFromYaml,
+  type CombineSpec,
   PipelineRow,
   PipelineField,
   StageSpec,
@@ -76,6 +78,10 @@ type TargetSource = number | 'shared';
 /** Stages that carry a source URL — used to seed the visual picker's mirror. */
 const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
 const JOIN_STAGES = ['resilientJoin', 'wgetJoin', 'visitJoin', 'join'];
+// Branch / set-op primitives: how sources are put together is chosen on the merge node (combine:),
+// so they are not offered in the catalogue (still valid in a hand-written YAML).
+const SET_OP_STAGES = new Set(['union_with', 'union_branches', 'unionByName', 'union_by_name', 'intersectByName',
+  'intersect_by_name', 'exceptByName', 'except_by_name', 'joinWithByName', 'join_with_by_name', 'store', 'reset']);
 
 /**
  * Prompt di esempio per il primo uso: si mostrano SOLO a pipeline vuota, e cliccati riempiono il
@@ -181,6 +187,9 @@ export default function BuildWizard({
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [graphSel, setGraphSel] = useState<number | null>(null);
   const [graphFull, setGraphFull] = useState(false);
+  // How the sources are combined at the merge point (multi-source): union by default (engine-side).
+  const [combine, setCombine] = useState<CombineSpec | null>(null);
+  const [mergeSel, setMergeSel] = useState(false);   // graph: the merge node is selected → combine form
   const [paletteOpen, setPaletteOpen] = useState(true);   // full-screen graph: stage palette on the left, collapsible
   const [listLane, setListLane] = useState<number | 'shared' | 'all'>(1);   // list mode: which branch is shown
   useEffect(() => {
@@ -433,7 +442,7 @@ export default function BuildWizard({
 
   const groupedCatalog = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    const matched = catalog.filter((s) => !/^(load|save)_/.test(s.stage_name)).filter(
+    const matched = catalog.filter((s) => !/^(load|save)_/.test(s.stage_name) && !SET_OP_STAGES.has(s.stage_name)).filter(
       (s) => !q || s.stage_name.toLowerCase().includes(q) || friendlyName(s.stage_name).toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
     const byCat = new Map<string, CatalogStage[]>();
     for (const s of matched) {
@@ -449,8 +458,9 @@ export default function BuildWizard({
       catalog, runtime, geo, pythonExtensions: pyExts,
       // Any anti-bot row detected by the picker → emit metadata.requires_hitl.
       hitlAwait: pipeline.some((r) => r && r._requires_hitl),
+      combine,
     }),
-    [pipeline, catalog, runtime, geo, pyExts]);
+    [pipeline, catalog, runtime, geo, pyExts, combine]);
 
   // ── Proposta dell'assistente ────────────────────────────────────────────────
   // L'assistente non tocca questo stato: scrive una bozza lato server e noi la leggiamo. Cosi' il
@@ -498,6 +508,7 @@ export default function BuildWizard({
   const applyDraft = useCallback(async () => {
     if (!draft) return;
     const rows = parsePipelineFromYaml(draft.pipeline_yaml, { catalog });
+    setCombine(parseCombineFromYaml(draft.pipeline_yaml));
     // Uno YAML che non si riesce a leggere non deve svuotare il canvas ne' bruciare la bozza:
     // si lascia la proposta li' (il diff mostra lo YAML) e si dice perche'.
     if (!rows.length) {
@@ -816,6 +827,7 @@ export default function BuildWizard({
     if (incoming === lastYaml.current) return;
     lastYaml.current = incoming;
     setPipeline(parsePipelineFromYaml(incoming, { catalog }));
+    setCombine(parseCombineFromYaml(incoming));
   }, [controlled, value]);
 
   // Outgoing: emit regenerated YAML on every edit (empty pipeline → empty string,
@@ -1108,6 +1120,71 @@ export default function BuildWizard({
       );
   };
 
+  /** Short label of the combination for the merge node. */
+  const combineLabel = (c: CombineSpec | null) => {
+    if (!c || c.type === 'union') return 'union · automatic';
+    if (c.type === 'join') return `join on ${c.key || '?'} (${c.how || 'inner'})`;
+    return `${c.type} on ${c.key || '?'}`;
+  };
+  /** Merge-node inspector: how the sources are put together (parser `combine:`). */
+  const renderCombineForm = () => {
+    const c: CombineSpec = combine || { type: 'union' };
+    const set = (patch: Partial<CombineSpec>) => setCombine({ ...c, ...patch });
+    const inp = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm';
+    const types: [CombineSpec['type'], string][] = [
+      ['union', 'Union — every row of every source'],
+      ['intersect', 'Intersect — only items found in every source'],
+      ['except', 'Except — items of Source 1 not found in the others'],
+      ['join', 'Join — one row per item, a column per source'],
+    ];
+    return (
+      <div className="space-y-3 p-2">
+        <div className="flex items-center">
+          <span className="text-sm font-semibold text-slate-700">⟹ Combine the sources</span>
+          <span className="flex-1" />
+          <button type="button" onClick={() => setMergeSel(false)} title="Close"
+            className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+        </div>
+        <div className="space-y-1">
+          {types.map(([t, l]) => (
+            <label key={t} className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" name="wr-combine" checked={c.type === t} onChange={() => set({ type: t })} /> {l}
+            </label>
+          ))}
+        </div>
+        {c.type !== 'union' && (
+          <label className="block text-sm text-slate-600">Key — the column that identifies the same item in every source
+            <input className={inp} value={c.key || ''} onChange={(e) => set({ key: e.target.value.trim() })} placeholder="e.g. ean" />
+          </label>
+        )}
+        {c.type === 'intersect' && (
+          <label className="block text-sm text-slate-600">Found in at least … sources (empty = all)
+            <input type="number" min={1} className={inp} value={c.min_sources ?? ''} onChange={(e) => set({ min_sources: e.target.value ? Number(e.target.value) : undefined })} />
+          </label>
+        )}
+        {c.type === 'join' && (<>
+          <label className="block text-sm text-slate-600">Fields to bring from each source (comma-separated)
+            <input className={inp} value={(c.fields || []).join(', ')} onChange={(e) => set({ fields: e.target.value.split(',').map((f) => f.trim()).filter(Boolean) })} placeholder="e.g. price, url" />
+          </label>
+          <label className="block text-sm text-slate-600">Keep
+            <select className={inp} value={c.how || 'inner'} onChange={(e) => set({ how: e.target.value as 'inner' | 'left' })}>
+              <option value="inner">only items found in every source</option>
+              <option value="left">every item of Source 1 (others may be empty)</option>
+            </select>
+          </label>
+        </>)}
+        <p className="text-xs text-slate-500">
+          {c.type === 'union'
+            ? 'Default: the rows of every source are put together, columns matched by name, each tagged with a `source` column.'
+            : c.type === 'join'
+              ? 'Columns are named <source>_<field>, e.g. source_1_price. The Shared stages then work on one row per item.'
+              : 'Runs right after the union, before the Shared stages.'}
+          {c.type !== 'union' && !c.key && <b className="block text-amber-700">A key is needed.</b>}
+        </p>
+      </div>
+    );
+  };
+
   // Stage palette for the full-screen graph: the catalogue is hidden behind the modal, so the stages to
   // add are listed right beside the canvas (user 10-23). Same filter and same "Add to" as the catalogue.
   const renderPalette = () => {
@@ -1184,7 +1261,9 @@ export default function BuildWizard({
               lookOf={(st) => lookOf(st, findSpec(st)?.category)}
               run={rowRun}
               selected={graphSel}
-              onSelect={(i) => setGraphSel(i === graphSel ? null : i)}
+              onSelect={(i) => { setMergeSel(false); setGraphSel(i === graphSel ? null : i); }}
+              combineLabel={combineLabel(combine)}
+              onMergeClick={() => { setGraphSel(null); setMergeSel(true); }}
               onRemove={(i) => { removeStage(i); setGraphSel(null); }}
               actions={{
                 sources: maxSourceNum(),
@@ -1202,7 +1281,7 @@ export default function BuildWizard({
            </div>
            {/* Inspector: the selected node's full form, right beside the canvas. */}
            <aside className={(full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
-             {graphSel != null && pipeline[graphSel] ? (
+             {mergeSel && multiSource ? renderCombineForm() : graphSel != null && pipeline[graphSel] ? (
                <div>
                  <div className="mb-2 flex items-center px-1">
                    <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
