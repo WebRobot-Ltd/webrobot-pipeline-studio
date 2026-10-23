@@ -24,6 +24,7 @@ import {
   startDesignerRun,
   extractRunError,
   extractLicenceNote,
+  extractRecipePatch,
   getAgenticRunStatus,
   getAgenticRunResult,
   extractPipelineYaml,
@@ -430,7 +431,7 @@ export default function BuildWizard({
         pipeline_yaml: y,
         note: `Designed by the agent from: \u201c${promptLabel}\u201d \u2014 validated against the stage catalogue`,
         updated_at: new Date().toISOString(),
-        licence_note: extractLicenceNote(result), source: 'agent',
+        licence_note: extractLicenceNote(result), recipe_fix: extractRecipePatch(result), source: 'agent',
       });
       setDraftOpen(true);
       setAskText('');
@@ -505,7 +506,7 @@ export default function BuildWizard({
       const qs = extractQuestions(result);
       const y = extractPipelineYaml(result);
       if ((!qs || qs.length === 0) && y) {
-        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), source: 'agent',
+        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), recipe_fix: extractRecipePatch(result), source: 'agent',
           note: `Designed by the agent from: \u201c${prompt}\u201d`, updated_at: new Date().toISOString() });
         setDraftOpen(true); return;
       }
@@ -547,7 +548,7 @@ export default function BuildWizard({
           : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
         return;
       }
-      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), source: 'agent',
+      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), recipe_fix: extractRecipePatch(result), source: 'agent',
         note: 'Designed from your guided answers', updated_at: new Date().toISOString() });
       setDraftOpen(true);
       setGuidedQuestions(null); setAskText('');
@@ -835,6 +836,12 @@ export default function BuildWizard({
             </button>
           </div>
           {draft.note && <p className="mt-1 text-sm text-blue-900">{draft.note}</p>}
+          {draft.recipe_fix && (
+            <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm leading-relaxed text-emerald-900">
+              The catalogue recipe for this site was out of date — the agent corrected it ({draft.recipe_fix}). The
+              platform re-checks the correction on the site and, if it passes, updates the catalogue for everyone.
+            </p>
+          )}
           {/* Promemoria, non blocco: i diritti sulle fonti sono dell'utente (/trust/terms). Se l'agente
               ha trovato la fonte marcata "a licenza" nel catalogo, lo dice in modo specifico. */}
           <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900">

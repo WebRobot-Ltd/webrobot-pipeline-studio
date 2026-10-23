@@ -383,6 +383,23 @@ export function extractRunError(result: any): string | null {
 }
 
 /**
+ * The recipe correction the designer made (`RECIPE_PATCH: {json}` before the pipeline): the catalogue
+ * recipe was wrong and the agent fixed it; the platform verifies it on the site before repairing the
+ * catalogue. Returns a short description for the person, or null.
+ */
+export function extractRecipePatch(result: any): string | null {
+  const testo = resultToText(result);
+  if (!testo) return null;
+  const m = testo.match(/^\s*RECIPE_PATCH:\s*(\{.*\})\s*$/m);
+  if (!m) return null;
+  try {
+    const p = JSON.parse(m[1]);
+    const keys = Object.keys(p).filter((k) => !['url', 'domain', 'test_query'].includes(k));
+    return keys.length ? keys.join(', ') : 'recipe';
+  } catch { return 'recipe'; }
+}
+
+/**
  * The designer's licence REMINDER: a line `LICENCE: <text>` before the pipeline when the catalogue marks
  * the source as licence-required (its terms restrict automated collection or reserve text and data
  * mining). A reminder, not a refusal: the person holds the rights (/trust/terms). Null when absent.
@@ -448,6 +465,8 @@ export interface PipelineDraft {
   updated_at: string | null;
   /** Reminder from the agent when the source's terms restrict automated collection (not a block). */
   licence_note?: string | null;
+  /** What the agent corrected in the catalogue recipe (verified by the platform before it is applied). */
+  recipe_fix?: string | null;
   /** 'agent' = proposed by a designer run (kept only in the page, never on the server); else the chat draft. */
   source?: 'agent' | 'chat';
 }

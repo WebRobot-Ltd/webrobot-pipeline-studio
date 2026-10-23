@@ -95,3 +95,11 @@ test('NEEDS after narration', () => {
   assert.equal(extractNeeds(r), 'give me one result card.');
   assert.equal(extractPipelineYaml(r), null);
 });
+
+// 10-23: recipe self-repair — the patch line is not part of the pipeline and is described to the person.
+test('RECIPE_PATCH line', async () => {
+  const { extractRecipePatch } = await import('../dist/client.js');
+  const r = { run: { designer: 'RECIPE_PATCH: {"url":"https://www.farmae.it","test_query":"crema solare","search":{"url_template":"https://www.farmae.it/search?q={q}"}}\n' + YAML } };
+  assert.equal(extractRecipePatch(r), 'search');
+  assert.equal(extractPipelineYaml(r), YAML);
+});
