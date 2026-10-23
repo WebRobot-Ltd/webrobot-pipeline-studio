@@ -1099,6 +1099,12 @@ export default function BuildWizard({
               selected={graphSel}
               onSelect={(i) => setGraphSel(i === graphSel ? null : i)}
               onRemove={(i) => { removeStage(i); setGraphSel(null); }}
+              actions={{
+                sources: maxSourceNum(),
+                onLane: setLane,
+                onMove: (i, d) => { moveStage(i, d); if (graphSel === i) setGraphSel(i + d); },
+                onDuplicate: (i) => setPipeline((prev) => [...prev.slice(0, i + 1), JSON.parse(JSON.stringify(prev[i])), ...prev.slice(i + 1)]),
+              }}
               onAddTo={(src) => {
                 setTarget(src as any);
                 document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

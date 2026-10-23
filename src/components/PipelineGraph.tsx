@@ -18,7 +18,7 @@ const COL = 270;   // horizontal step between stages
 const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
-  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560,
+  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions,
 }: {
   pipeline: PipelineRow[];
   lookOf: (stage: string) => GraphLook;
@@ -29,7 +29,16 @@ export default function PipelineGraph({
   onAddTo: (src: number | 'shared') => void;
   /** canvas height in px, or a CSS length (the expanded view passes a viewport height) */
   height?: number | string;
+  /** right-click menu actions on a stage node (optional) */
+  actions?: {
+    sources: number;                                   // lanes available (Source 1..n)
+    onLane: (idx: number, lane: number | 'shared') => void;
+    onMove: (idx: number, dir: -1 | 1) => void;
+    onDuplicate: (idx: number) => void;
+  };
 }) {
+  // right-click menu: which stage, where (px inside the canvas box)
+  const [menu, setMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   // positions the person dragged, by node id (kept while the page is open; the YAML has no layout)
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
 
@@ -169,7 +178,7 @@ export default function PipelineGraph({
   }
 
   return (
-    <div style={{ height }} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+    <div style={{ height }} className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
       <ReactFlow
         nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         minZoom={0.2} maxZoom={1.6} proOptions={{ hideAttribution: true }}
@@ -177,9 +186,25 @@ export default function PipelineGraph({
         onNodesChange={(chs) => chs.forEach((ch: any) => {
           if (ch.type === 'position' && ch.position) setMoved((m) => ({ ...m, [ch.id]: ch.position }));
         })}
+        deleteKeyCode={['Delete', 'Backspace']}
+        onNodesDelete={(del) => {
+          // highest index first, so the earlier indices stay valid while rows are removed
+          del.map((n) => String(n.id)).filter((id) => /^s\d+$/.test(id)).map((id) => Number(id.slice(1)))
+            .sort((x, y) => y - x).forEach((i) => onRemove(i));
+        }}
+        onPaneClick={() => setMenu(null)}
+        onMoveStart={() => setMenu(null)}
+        onNodeContextMenu={(e, n) => {
+          const id = String(n.id);
+          if (!/^s\d+$/.test(id)) return;
+          e.preventDefault();
+          const box = (e.currentTarget as HTMLElement).closest('.react-flow')?.getBoundingClientRect();
+          setMenu({ idx: Number(id.slice(1)), x: e.clientX - (box?.left || 0), y: e.clientY - (box?.top || 0) });
+        }}
         onNodeClick={(_, n) => {
           const id = String(n.id);
-          if (id.startsWith('s')) onSelect(Number(id.slice(1)));
+          setMenu(null);
+          if (/^s\d+$/.test(id)) onSelect(Number(id.slice(1)));
           else if (id.startsWith('add-')) onAddTo(id === 'add-shared' ? 'shared' : Number(id.slice(4)));
         }}
       >
@@ -187,6 +212,36 @@ export default function PipelineGraph({
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable style={{ height: 90, width: 140 }} />
       </ReactFlow>
+      {menu && pipeline[menu.idx] && (() => {
+        const i = menu.idx;
+        const row = pipeline[i];
+        const item = 'block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent';
+        const run = (f: () => void) => () => { setMenu(null); f(); };
+        return (
+          <div className="absolute z-20 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+            style={{ left: menu.x, top: menu.y }} onContextMenu={(e) => e.preventDefault()}>
+            <div className="truncate border-b border-slate-100 px-3 pb-1.5 pt-1 font-mono text-xs font-semibold text-slate-500">{i + 1}. {row.stage}</div>
+            <button type="button" className={item} onClick={run(() => onSelect(i))}>✎ Edit</button>
+            {actions && actions.sources > 1 && (<>
+              <div className="mt-1 border-t border-slate-100 px-3 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Branch</div>
+              {Array.from({ length: actions.sources }, (_, k) => k + 1).map((n) => (
+                <button key={n} type="button" className={item} disabled={row._src === n || (n === 1 && row._src == null)}
+                  onClick={run(() => actions.onLane(i, n))}>→ Source {n}</button>
+              ))}
+              <button type="button" className={item} disabled={row._src === 'shared'}
+                onClick={run(() => actions.onLane(i, 'shared'))}>⟹ Shared (after merge)</button>
+            </>)}
+            {actions && (<>
+              <div className="mt-1 border-t border-slate-100" />
+              <button type="button" className={item} disabled={i === 0} onClick={run(() => actions.onMove(i, -1))}>↑ Move earlier</button>
+              <button type="button" className={item} disabled={i === pipeline.length - 1} onClick={run(() => actions.onMove(i, 1))}>↓ Move later</button>
+              <button type="button" className={item} onClick={run(() => actions.onDuplicate(i))}>⧉ Duplicate</button>
+            </>)}
+            <div className="mt-1 border-t border-slate-100" />
+            <button type="button" className={item + ' text-rose-700 hover:bg-rose-50'} onClick={run(() => onRemove(i))}>✕ Remove</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
