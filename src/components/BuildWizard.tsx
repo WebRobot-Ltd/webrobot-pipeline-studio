@@ -167,6 +167,7 @@ export default function BuildWizard({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
+  const [bottomTab, setBottomTab] = useState<'data' | 'yaml' | 'steps'>('data');
   // "Save to": a NEW agent (named here) or an EXISTING agent of the org — the designer pipeline becomes
   // that agent's pipeline (user 10-23: starting from the designer, the pipeline must go to the agent).
   const [saveTarget, setSaveTarget] = useState<string>('');
@@ -648,7 +649,30 @@ export default function BuildWizard({
     [pipeline, catalog],
   );
 
+  // Per-row result of the last dry run (redesign 10-23, like Lakeflow's row-count badges): the steps are
+  // matched to the rows by stage name in order; the extraction rows get the rows and fill rate.
+  const rowRun = useMemo(() => {
+    if (!validateResult) return null;
+    const steps: any[] = Array.isArray(validateResult.steps) ? validateResult.steps : [];
+    const recs: any[] = Array.isArray(validateResult.records) ? validateResult.records : [];
+    const used = new Set<number>();
+    return pipeline.map((row) => {
+      const k = steps.findIndex((st, i) => !used.has(i) && String(st?.stage || '') === row.stage);
+      if (k >= 0) used.add(k);
+      const st = k >= 0 ? steps[k] : null;
+      let fill: number | null = null;
+      if (['flatSelect', 'extract'].includes(row.stage) && recs.length && Array.isArray(row._fields) && row._fields.length) {
+        const names = row._fields.map((f: any) => f.as).filter(Boolean);
+        const cells = recs.length * names.length;
+        const ok = recs.reduce((n, r) => n + names.filter((nm: string) => r?.[nm] != null && String(r[nm]).trim() !== '').length, 0);
+        fill = cells ? Math.round((100 * ok) / cells) : null;
+      }
+      return { status: st ? String(st.status || '') : null, message: st?.message ? String(st.message) : '', fill, rows: fill != null ? recs.length : null };
+    });
+  }, [validateResult, pipeline]);
+
   const handleValidate = async () => {
+    setBottomTab('data');
     setValidation('Running the pipeline on the real site (dry run)…');
     try {
       setValidateResult(null);
@@ -896,6 +920,63 @@ export default function BuildWizard({
           )}
         </div>
       )}
+      {/* TOP BAR (redesign 10-23): where the pipeline goes (Save to an agent) and the actions, always in
+          reach — before they sat at the bottom of a long column. */}
+      {!embedded && (
+        <div className="lg:col-span-2 sticky top-0 z-20 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+          <div className="flex flex-wrap items-center gap-2 ">
+              <label className="text-sm font-medium text-slate-700" htmlFor="wr-save-target">Save to</label>
+              <select id="wr-save-target" value={saveTarget} onChange={(e) => setSaveTarget(e.target.value)}
+                title="The agent this pipeline belongs to: a new one, or an existing agent of your organization"
+                className="rounded-lg border border-slate-300 px-2 py-2 text-sm max-w-[260px]">
+                <option value="">+ New agent</option>
+                {agentsList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              {!saveTarget && (
+                <input
+                  value={pipelineName}
+                  onChange={(e) => setPipelineName(e.target.value)}
+                  placeholder="new agent name"
+                  className="min-w-[160px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
+                />
+              )}
+              {saveTarget && <span className="flex-1 text-sm text-slate-500">its pipeline is replaced by this one</span>}
+              {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
+                  cliente. L'autorizzazione resta del server (canAccessOrganization): questo
+                  selettore e' una comodita', non il controllo. */}
+              {organizations && organizations.length > 1 && (
+                <select
+                  value={orgId}
+                  onChange={(e) => setOrgId(e.target.value)}
+                  title="Organization this pipeline belongs to"
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm max-w-[220px]"
+                >
+                  <option value="">My organization</option>
+                  {organizations.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              )}
+            <span className="flex-1" />
+            <button onClick={handleValidate}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              ✓ Validate
+            </button>
+            <div className="flex gap-2">
+              <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save draft'}
+              </button>
+              <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
+                className="px-5 py-2 rounded-lg bg-brand-900 text-white text-sm font-semibold shadow-sm hover:bg-brand-950 disabled:opacity-50">
+                Save & run →
+              </button>
+            </div>
+          </div>
+          {saveMsg && <p className="mt-2 text-sm text-slate-700">{saveMsg}</p>}
+        </div>
+      )}
+
       {/* Catalogue */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1051,6 +1132,16 @@ export default function BuildWizard({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
+                      {rowRun?.[idx] && (rowRun[idx].status || rowRun[idx].rows != null) && (() => {
+                        const rr = rowRun[idx];
+                        const bad = /fail|error/i.test(rr.status || '');
+                        return (
+                          <span title={rr.message || 'last dry run'}
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bad ? 'border-rose-300 bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
+                            {bad ? '✕ failed' : rr.rows != null ? `✓ ${rr.rows} rows · fields ${rr.fill}% filled` : '✓ ran'}
+                          </span>
+                        );
+                      })()}
                       {multiSource && (
                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                           {row._src === 'shared' ? 'shared' : `Source ${row._src || 1}`}
@@ -1190,68 +1281,42 @@ export default function BuildWizard({
           </div>
         </details>
 
-        <label className="block text-xs text-slate-500 mb-0.5">YAML preview</label>
-        <pre className="max-h-64 overflow-auto rounded bg-slate-900 text-slate-100 text-xs p-3 mb-3 whitespace-pre-wrap">
-          {yaml}
-        </pre>
-
-        {/* Standalone persistence chrome — hidden when the host form owns saving. */}
-        {!embedded && (
-          <>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="wr-save-target">Save to</label>
-              <select id="wr-save-target" value={saveTarget} onChange={(e) => setSaveTarget(e.target.value)}
-                title="The agent this pipeline belongs to: a new one, or an existing agent of your organization"
-                className="rounded-lg border border-slate-300 px-2 py-2 text-sm max-w-[260px]">
-                <option value="">+ New agent</option>
-                {agentsList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              {!saveTarget && (
-                <input
-                  value={pipelineName}
-                  onChange={(e) => setPipelineName(e.target.value)}
-                  placeholder="new agent name"
-                  className="min-w-[160px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
-                />
-              )}
-              {saveTarget && <span className="flex-1 text-sm text-slate-500">its pipeline is replaced by this one</span>}
-              {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
-                  cliente. L'autorizzazione resta del server (canAccessOrganization): questo
-                  selettore e' una comodita', non il controllo. */}
-              {organizations && organizations.length > 1 && (
-                <select
-                  value={orgId}
-                  onChange={(e) => setOrgId(e.target.value)}
-                  title="Organization this pipeline belongs to"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm max-w-[220px]"
-                >
-                  <option value="">My organization</option>
-                  {organizations.map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
+        {/* BOTTOM PANEL (redesign 10-23, after Lakeflow Designer / Matillion): the data is the point of a
+            pipeline — the dry run's rows sit under the steps, with the YAML and the run steps as tabs. */}
+        <div className="rounded-xl border border-slate-200">
+          <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 pt-2">
+            {([['data', `Data${validateResult?.record_count != null ? ` (${validateResult.record_count})` : ''}`], ['yaml', 'YAML'], ['steps', 'Run steps']] as const).map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setBottomTab(k)}
+                className={`rounded-t-lg px-3 py-2 text-sm font-semibold ${bottomTab === k ? 'border border-b-0 border-slate-200 bg-white text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
+            ))}
+            <span className="flex-1" />
+            {!embedded && (
+              <button onClick={handleValidate} className="mb-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">✓ Validate</button>
+            )}
+          </div>
+          <div className="p-3">
+            {bottomTab === 'data' && (
+              <>
+                {validation && <p className="text-base text-slate-700">{validation}</p>}
+                {validateResult ? <DataPreview result={validateResult} />
+                  : !validation && <p className="text-sm text-slate-500">Press <b>Validate</b> to run the pipeline on the real site (a dry run, nothing is saved) and see the rows it extracts.</p>}
+              </>
+            )}
+            {bottomTab === 'yaml' && (
+              <pre className="max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs whitespace-pre-wrap text-slate-100">{yaml}</pre>
+            )}
+            {bottomTab === 'steps' && (
+              Array.isArray(validateResult?.steps) && validateResult.steps.length ? (
+                <ol className="space-y-1.5 text-sm">
+                  {validateResult.steps.map((st: any, i: number) => (
+                    <li key={i} className="flex gap-2"><span className="w-6 shrink-0 text-slate-400">{i + 1}.</span>
+                      <span><b className="font-mono">{st.stage}</b> · <span className={/fail|error/i.test(String(st.status)) ? 'text-rose-700' : 'text-slate-600'}>{st.status}</span>{st.message ? ` — ${st.message}` : ''}</span></li>
                   ))}
-                </select>
-              )}
-              <button onClick={handleValidate}
-                className="text-sm font-semibold px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50">
-                ✓ Validate
-              </button>
-            </div>
-            {validation && <p className="text-base text-slate-700 mb-2">{validation}</p>}
-            {validateResult && <div className="mb-3"><DataPreview result={validateResult} /></div>}
-
-            <div className="flex gap-2">
-              <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
-                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save draft'}
-              </button>
-              <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
-                className="px-5 py-2 rounded-lg bg-brand-900 text-white text-sm font-semibold shadow-sm hover:bg-brand-950 disabled:opacity-50">
-                Save & run →
-              </button>
-            </div>
-            {saveMsg && <p className="text-sm text-slate-600 mt-2">{saveMsg}</p>}
-          </>
-        )}
+                </ol>
+              ) : <p className="text-sm text-slate-500">The steps of the last dry run appear here.</p>
+            )}
+          </div>
+        </div>
       </section>
 
       {pickerFor !== null && pipeline[pickerFor] && (() => {
