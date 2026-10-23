@@ -22,6 +22,7 @@ import {
   putPipelineDraft,
   deletePipelineDraft,
   startDesignerRun,
+  extractRunError,
   getAgenticRunStatus,
   getAgenticRunResult,
   extractPipelineYaml,
@@ -303,6 +304,9 @@ export default function BuildWizard({
   const [draftOpen, setDraftOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [askText, setAskText] = useState('');
+  // The pipeline drafted on the canvas goes to the agent as context (current_yaml) ONLY with this flag,
+  // shown next to Propose when there is a draft: on = the agent extends it, off = it starts from scratch.
+  const [useDraftCtx, setUseDraftCtx] = useState(true);
   const [askErr, setAskErr] = useState<string | null>(null);
   // A che punto e' il run: un'attesa di decine di secondi senza notizie sembra un guasto.
   const [askPhase, setAskPhase] = useState<string | null>(null);
@@ -409,9 +413,12 @@ export default function BuildWizard({
         // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga. Se c'e' la domanda,
         // la si MOSTRA: dice all'utente cosa chiarire, invece di un generico "descrivi meglio".
         const needs = extractNeeds(result);
+        const stopped = extractRunError(result);
         setAskErr(needs
           ? `The agent needs more detail: ${needs}`
-          : 'The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
+          : stopped
+            ? `The agent stopped before finishing (${stopped}) \u2014 try again, or describe the site and the fields more concretely.`
+            : 'The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
         return;
       }
       setDraft({
@@ -439,7 +446,7 @@ export default function BuildWizard({
     setAskPhase('Starting the designer agent\u2026');
     let eid: string | undefined;
     try {
-      const run = await startDesignerRun(prompt, pipeline.length ? yaml : '');
+      const run = await startDesignerRun(prompt, pipeline.length && useDraftCtx ? yaml : '');
       eid = run?.executionId;
     } catch (e) {
       setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
@@ -450,7 +457,7 @@ export default function BuildWizard({
     // Si ricorda SUBITO, prima di attendere: se l'utente chiude durante l'attesa, il run non e' perso.
     salvaRun(draftContext, { executionId: eid, prompt, startedAt: Date.now() });
     await seguiRun(eid, prompt);
-  }, [askText, draftContext, pipeline, yaml, seguiRun]);
+  }, [askText, draftContext, pipeline, yaml, useDraftCtx, seguiRun]);
 
   // \u2500\u2500 Wizard guidato "2 round" (canale A) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Attende un run fino all'esito e ne torna il result grezzo (o null, gestendo gia' l'errore).
@@ -486,7 +493,7 @@ export default function BuildWizard({
         'GUIDED SETUP \u2014 STEP 1 of 2. Do NOT design a pipeline yet. Return ONLY a JSON array of 2 to 4 '
         + 'short, plain-language questions whose answers you need to design a WebRobot ETL pipeline for '
         + 'this request. No YAML, no prose \u2014 just the JSON array of strings.\n\nRequest: ' + prompt;
-      const run = await startDesignerRun(goal, pipeline.length ? yaml : '');
+      const run = await startDesignerRun(goal, pipeline.length && useDraftCtx ? yaml : '');
       const eid = run?.executionId;
       if (!eid) { setAskErr('The agent did not start.'); return; }
       const result = await pollUntilResult(eid);
@@ -509,7 +516,7 @@ export default function BuildWizard({
     } finally {
       setGenerating(false); setAskPhase(null);
     }
-  }, [askText, pipeline, yaml, draftContext, pollUntilResult]);
+  }, [askText, pipeline, yaml, useDraftCtx, draftContext, pollUntilResult]);
 
   // ROUND 2: con le risposte, l'agente progetta \u2014 stessa proposta/diff/apply del canale A.
   const submitGuided = useCallback(async () => {
@@ -522,7 +529,7 @@ export default function BuildWizard({
       const goal =
         'GUIDED SETUP \u2014 STEP 2 of 2. Now design the WebRobot ETL pipeline. Here is the request and the '
         + "person's answers.\n\nRequest: " + guidedPrompt + '\n\n' + qa;
-      const run = await startDesignerRun(goal, pipeline.length ? yaml : '');
+      const run = await startDesignerRun(goal, pipeline.length && useDraftCtx ? yaml : '');
       const eid = run?.executionId;
       if (!eid) { setAskErr('The agent did not start.'); return; }
       const result = await pollUntilResult(eid);
@@ -530,7 +537,9 @@ export default function BuildWizard({
       const y = extractPipelineYaml(result);
       if (!y) {
         const needs = extractNeeds(result);
+        const stopped = extractRunError(result);
         setAskErr(needs ? `The agent needs more detail: ${needs}`
+          : stopped ? `The agent stopped before finishing (${stopped}) \u2014 try again.`
           : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
         return;
       }
@@ -543,7 +552,7 @@ export default function BuildWizard({
     } finally {
       setGenerating(false); setAskPhase(null);
     }
-  }, [guidedQuestions, guidedAnswers, guidedPrompt, pipeline, yaml, draftContext, pollUntilResult]);
+  }, [guidedQuestions, guidedAnswers, guidedPrompt, pipeline, yaml, useDraftCtx, draftContext, pollUntilResult]);
 
   // RIPRESA al montaggio: se c'e' un run designer salvato e recente, lo si riprende \u2014 ancora in
   // corso o gia' finito mentre eravamo via. Il ref evita di rilanciare la ripresa a ogni render.
@@ -704,6 +713,21 @@ export default function BuildWizard({
                   </button>
                 </div>
               </div>
+              {pipeline.length > 0 && (
+                <label className="mt-3 flex items-start gap-2 text-sm text-blue-50">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={useDraftCtx}
+                    onChange={(e) => setUseDraftCtx(e.target.checked)}
+                    disabled={generating}
+                  />
+                  <span>
+                    Use the pipeline I drafted ({pipeline.length} stage{pipeline.length === 1 ? '' : 's'}) as the starting
+                    point — the agent extends it instead of starting over
+                  </span>
+                </label>
+              )}
               {chatSlot && <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-blue-100">or {chatSlot}</div>}
               {/* Partenze concrete, solo quando non c'e' ancora nulla e non si sta gia' generando:
                   a chi ha gia' una pipeline o sta descrivendo non servono e farebbero rumore. */}

@@ -4,7 +4,7 @@
 // Copre il bug del 29-09-2026: il result della riga arriva come STRINGA JSON (il campo lato
 // server e' String/JSONB, non un oggetto), quindi l'estrazione DEVE aprirla prima, altrimenti
 // finisce sul canvas il blob JSON grezzo invece della pipeline.
-import { extractPipelineYaml, extractNeeds, extractQuestions } from '../dist/client.js';
+import { extractPipelineYaml, extractNeeds, extractQuestions, extractRunError } from '../dist/client.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -68,4 +68,15 @@ test('extractQuestions', () => {
   // Una pipeline non e' un elenco di domande → null (il round 1 ha gia' progettato).
   assert.equal(extractQuestions(YAML), null);
   assert.equal(extractQuestions(null), null);
+});
+
+// 10-23: a run cut by the turn budget comes back as {run:{designer:"", error:"..."}}. The error text is
+// the only non-empty string, so it must NOT be taken as the pipeline, and its reason is shown.
+test('extractRunError', () => {
+  const stopped = { run: { designer: '', error: 'agent ended without an answer: error_max_turns after 41 turns' } };
+  assert.equal(extractRunError(stopped), 'agent ended without an answer: error_max_turns after 41 turns');
+  assert.equal(extractRunError(JSON.stringify(stopped)), 'agent ended without an answer: error_max_turns after 41 turns');
+  assert.equal(extractPipelineYaml(stopped), null);
+  assert.equal(extractRunError({ run: { designer: YAML } }), null);
+  assert.equal(extractRunError({ run: { designer: '' } }), null);
 });

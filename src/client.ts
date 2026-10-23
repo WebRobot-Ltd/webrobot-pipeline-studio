@@ -357,7 +357,32 @@ export function extractQuestions(result: any): string[] | null {
   return null;
 }
 
+/**
+ * Why a run ended WITHOUT an answer: the runtime puts `{node: {crew: "", error: "agent ended without an
+ * answer: error_max_turns after 41 turns"}}`. Returns that reason, or null. It must be checked before
+ * reading the answer: otherwise the error text is the first non-empty string and would be taken as
+ * the pipeline.
+ */
+export function extractRunError(result: any): string | null {
+  let r: any = result;
+  if (typeof r === 'string') {
+    const s = r.trim();
+    if (!s.startsWith('{')) return null;
+    try { r = JSON.parse(s); } catch { return null; }
+  }
+  if (!r || typeof r !== 'object') return null;
+  if (typeof r.error === 'string' && r.error.trim()) return r.error.trim();
+  for (const nodo of Object.values(r as Record<string, any>)) {
+    if (nodo && typeof nodo === 'object' && typeof nodo.error === 'string' && nodo.error.trim()) {
+      const testo = Object.entries(nodo).find(([k, v]) => k !== 'error' && typeof v === 'string' && v.trim());
+      if (!testo) return nodo.error.trim();
+    }
+  }
+  return null;
+}
+
 export function extractPipelineYaml(result: any): string | null {
+  if (extractRunError(result)) return null;              // il run si e' fermato senza risposta
   const testo = resultToText(result);
   if (!testo) return null;
   let y = testo;
