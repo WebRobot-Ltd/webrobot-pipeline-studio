@@ -67,6 +67,25 @@ export interface YamlContext {
   hitlAwait?: boolean;
   /** How the sources are put together at the merge point (multi-source only); absent/union = default. */
   combine?: CombineSpec | null;
+  /** The final dataset the run writes (`output:`); default parquet · overwrite. */
+  output?: OutputSpec | null;
+}
+
+/** `output:` of the pipeline: what the Spark runner writes at the end (parquet | csv, overwrite | append). */
+export interface OutputSpec { format: 'parquet' | 'csv'; mode: 'overwrite' | 'append' }
+
+function outputLines(o?: OutputSpec | null): string[] {
+  return ['output:', `  format: ${o?.format || 'parquet'}`, `  mode: ${o?.mode || 'overwrite'}`];
+}
+
+/** Read `output:` back (block or inline map); null when it is the default or absent. */
+export function parseOutputFromYaml(yaml: string): OutputSpec | null {
+  const y = String(yaml || '');
+  const block = /^output:[ \t]*\n((?:[ \t]+.*\n?)*)/m.exec(y)?.[1] || /^output:[ \t]*\{(.*)\}/m.exec(y)?.[1] || '';
+  const fmt = /format\s*:\s*["']?(\w+)/.exec(block)?.[1]?.toLowerCase();
+  const mode = /mode\s*:\s*["']?(\w+)/.exec(block)?.[1]?.toLowerCase();
+  const o: OutputSpec = { format: fmt === 'csv' ? 'csv' : 'parquet', mode: mode === 'append' ? 'append' : 'overwrite' };
+  return o.format === 'parquet' && o.mode === 'overwrite' ? null : o;
 }
 
 /** `combine:` of a multi-source pipeline (parser 10-23): union | intersect | except | join. */
@@ -208,9 +227,7 @@ function buildSourcesYaml(pipeline: PipelineRow[], ctx: YamlContext): string {
       lines.push(l);
   }
   for (const cl of combineLines(ctx.combine)) lines.push(cl);
-  lines.push('output:');
-  lines.push('  format: parquet');
-  lines.push('  mode: overwrite');
+  for (const ol of outputLines(ctx.output)) lines.push(ol);
   const metaLines: string[] = [];
   if (ctx.runtime && ctx.runtime !== 'spark') metaLines.push(`  runtime: ${yamlScalar(ctx.runtime)}`);
   if (ctx.geo && /^[a-z]{2}$/i.test(ctx.geo)) metaLines.push(`  geo: ${yamlScalar(ctx.geo.toLowerCase())}`);
@@ -350,9 +367,7 @@ export function buildYamlFromPipeline(pipeline: PipelineRow[], ctx: YamlContext)
     for (const ln of String(ext.functionBody).split('\n')) lines.push('        ' + ln);
   }
 
-  lines.push('output:');
-  lines.push('  format: parquet');
-  lines.push('  mode: overwrite');
+  for (const ol of outputLines(ctx.output)) lines.push(ol);
 
   const metaLines: string[] = [];
   if (ctx.runtime && ctx.runtime !== 'spark') metaLines.push(`  runtime: ${yamlScalar(ctx.runtime)}`);

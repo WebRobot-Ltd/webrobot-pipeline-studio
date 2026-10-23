@@ -20,7 +20,7 @@ const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
   pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions, combineLabel, onMergeClick,
-  positions, onPositions,
+  positions, onPositions, outputLabel, onSaveClick,
 }: {
   pipeline: PipelineRow[];
   lookOf: (stage: string) => GraphLook;
@@ -34,6 +34,9 @@ export default function PipelineGraph({
   /** dragged node positions, owned by the host so they survive the inline ⇄ full-screen switch */
   positions?: Record<string, { x: number; y: number }>;
   onPositions?: (update: (prev: Record<string, { x: number; y: number }>) => Record<string, { x: number; y: number }>) => void;
+  /** what the save node shows (e.g. 'csv · append') and its click (→ output form) */
+  outputLabel?: string;
+  onSaveClick?: () => void;
   /** what the merge node shows (default 'union · automatic') and its click (→ combine form) */
   combineLabel?: string;
   onMergeClick?: () => void;
@@ -171,14 +174,14 @@ export default function PipelineGraph({
       endX = (idxs.length + 1) * COL;
       endFrom = idxs.length ? `s${idxs[idxs.length - 1]}` : null;
     }
-    ns.push({ id: 'save', position: pos('save', endX, endY), selectable: false,
+    ns.push({ id: 'save', position: pos('save', endX, endY), selectable: !!onSaveClick,
       data: { label: (
         <div className="text-left">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xl ring-1 ring-emerald-200">💾</span>
             <span>
               <span className="block font-mono text-sm font-semibold text-slate-900">save</span>
-              <span className="block text-xs text-slate-500">parquet · overwrite</span>
+              <span className="block text-xs text-slate-500">{outputLabel || 'parquet · overwrite'}</span>
             </span>
           </div>
         </div>
@@ -190,7 +193,7 @@ export default function PipelineGraph({
     // default handles are bottom/top, which made every arc loop under and over the nodes).
     for (const n of ns) { n.sourcePosition = Position.Right; n.targetPosition = Position.Left; }
     return { nodes: ns, edges: es };
-  }, [pipeline, lookOf, run, selected, moved, onRemove, combineLabel]);
+  }, [pipeline, lookOf, run, selected, moved, onRemove, combineLabel, outputLabel]);
 
   if (!pipeline.length) {
     return <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No stages yet — describe what you want, or add stages from the catalogue.</p>;
@@ -225,6 +228,7 @@ export default function PipelineGraph({
           setMenu(null);
           if (/^s\d+$/.test(id)) onSelect(Number(id.slice(1)));
           else if (id === 'merge') onMergeClick?.();
+          else if (id === 'save') onSaveClick?.();
           else if (id.startsWith('add-')) onAddTo(id === 'add-shared' ? 'shared' : Number(id.slice(4)));
         }}
       >

@@ -34,3 +34,24 @@ test('intersect with min_sources round-trips', () => {
 test('string form is read', () => {
   assert.deepEqual(parseCombineFromYaml('sources: []\ncombine: except\n'), { type: 'except' });
 });
+
+// output: of the save node (10-23) — format/mode written and read back
+import { parseOutputFromYaml } from '../dist/yaml.js';
+
+test('default output stays parquet · overwrite and reads back as null', () => {
+  const y = buildYamlFromPipeline([rows[0]], {});
+  assert.match(y, /^output:\n  format: parquet\n  mode: overwrite$/m);
+  assert.equal(parseOutputFromYaml(y), null);
+});
+
+test('csv · append round-trips (single and multi source)', () => {
+  for (const r of [[rows[0]], rows]) {
+    const y = buildYamlFromPipeline(r, { output: { format: 'csv', mode: 'append' } });
+    assert.match(y, /^output:\n  format: csv\n  mode: append$/m);
+    assert.deepEqual(parseOutputFromYaml(y), { format: 'csv', mode: 'append' });
+  }
+});
+
+test('inline output map from an agent is read', () => {
+  assert.deepEqual(parseOutputFromYaml('pipeline: []\noutput: { format: csv, mode: overwrite, path: "x" }\n'), { format: 'csv', mode: 'overwrite' });
+});

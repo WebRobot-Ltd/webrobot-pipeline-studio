@@ -45,7 +45,9 @@ import {
   buildYamlFromPipeline,
   parsePipelineFromYaml,
   parseCombineFromYaml,
+  parseOutputFromYaml,
   type CombineSpec,
+  type OutputSpec,
   PipelineRow,
   PipelineField,
   StageSpec,
@@ -190,6 +192,9 @@ export default function BuildWizard({
   // How the sources are combined at the merge point (multi-source): union by default (engine-side).
   const [combine, setCombine] = useState<CombineSpec | null>(null);
   const [mergeSel, setMergeSel] = useState(false);
+  // final dataset written by the run (`output:`); null = parquet · overwrite
+  const [output, setOutput] = useState<OutputSpec | null>(null);
+  const [saveSel, setSaveSel] = useState(false);   // graph: the save node is selected → output form
   // node positions dragged in the graph: shared by the inline and the full-screen canvas (kept while the page is open)
   const [graphPos, setGraphPos] = useState<Record<string, { x: number; y: number }>>({});   // graph: the merge node is selected → combine form
   const [paletteOpen, setPaletteOpen] = useState(true);   // full-screen graph: stage palette on the left, collapsible
@@ -461,8 +466,9 @@ export default function BuildWizard({
       // Any anti-bot row detected by the picker → emit metadata.requires_hitl.
       hitlAwait: pipeline.some((r) => r && r._requires_hitl),
       combine,
+      output,
     }),
-    [pipeline, catalog, runtime, geo, pyExts, combine]);
+    [pipeline, catalog, runtime, geo, pyExts, combine, output]);
 
   // ── Proposta dell'assistente ────────────────────────────────────────────────
   // L'assistente non tocca questo stato: scrive una bozza lato server e noi la leggiamo. Cosi' il
@@ -511,6 +517,7 @@ export default function BuildWizard({
     if (!draft) return;
     const rows = parsePipelineFromYaml(draft.pipeline_yaml, { catalog });
     setCombine(parseCombineFromYaml(draft.pipeline_yaml));
+    setOutput(parseOutputFromYaml(draft.pipeline_yaml));
     // Uno YAML che non si riesce a leggere non deve svuotare il canvas ne' bruciare la bozza:
     // si lascia la proposta li' (il diff mostra lo YAML) e si dice perche'.
     if (!rows.length) {
@@ -830,6 +837,7 @@ export default function BuildWizard({
     lastYaml.current = incoming;
     setPipeline(parsePipelineFromYaml(incoming, { catalog }));
     setCombine(parseCombineFromYaml(incoming));
+    setOutput(parseOutputFromYaml(incoming));
   }, [controlled, value]);
 
   // Outgoing: emit regenerated YAML on every edit (empty pipeline → empty string,
@@ -1122,6 +1130,42 @@ export default function BuildWizard({
       );
   };
 
+  /** Save-node inspector: the dataset every run writes at the end (`output:`). */
+  const renderOutputForm = () => {
+    const o: OutputSpec = output || { format: 'parquet', mode: 'overwrite' };
+    const set = (patch: Partial<OutputSpec>) => {
+      const n = { ...o, ...patch };
+      setOutput(n.format === 'parquet' && n.mode === 'overwrite' ? null : n);
+    };
+    const inp = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm';
+    return (
+      <div className="space-y-3 p-2">
+        <div className="flex items-center">
+          <span className="text-sm font-semibold text-slate-700">💾 Result dataset</span>
+          <span className="flex-1" />
+          <button type="button" onClick={() => setSaveSel(false)} title="Close"
+            className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+        </div>
+        <label className="block text-sm text-slate-600">Format
+          <select className={inp} value={o.format} onChange={(e) => set({ format: e.target.value as OutputSpec['format'] })}>
+            <option value="parquet">Parquet — columnar, fast to query (default)</option>
+            <option value="csv">CSV — opens in a spreadsheet</option>
+          </select>
+        </label>
+        <label className="block text-sm text-slate-600">Each run
+          <select className={inp} value={o.mode} onChange={(e) => set({ mode: e.target.value as OutputSpec['mode'] })}>
+            <option value="overwrite">replaces the previous result (default)</option>
+            <option value="append">adds to the previous results</option>
+          </select>
+        </label>
+        <p className="text-xs text-slate-500">
+          The run always writes this dataset to the platform storage. To ALSO write somewhere else (a database,
+          BigQuery, a file on S3…), add a 💾 Save data stage.
+        </p>
+      </div>
+    );
+  };
+
   /** Short label of the combination for the merge node. */
   const combineLabel = (c: CombineSpec | null) => {
     if (!c || c.type === 'union') return 'union · automatic';
@@ -1263,11 +1307,13 @@ export default function BuildWizard({
               lookOf={(st) => lookOf(st, findSpec(st)?.category)}
               run={rowRun}
               selected={graphSel}
-              onSelect={(i) => { setMergeSel(false); setGraphSel(i === graphSel ? null : i); }}
+              onSelect={(i) => { setMergeSel(false); setSaveSel(false); setGraphSel(i === graphSel ? null : i); }}
+              outputLabel={`${output?.format || 'parquet'} · ${output?.mode || 'overwrite'}`}
+              onSaveClick={() => { setGraphSel(null); setMergeSel(false); setSaveSel(true); }}
               combineLabel={combineLabel(combine)}
               positions={graphPos}
               onPositions={setGraphPos}
-              onMergeClick={() => { setGraphSel(null); setMergeSel(true); }}
+              onMergeClick={() => { setGraphSel(null); setSaveSel(false); setMergeSel(true); }}
               onRemove={(i) => { removeStage(i); setGraphSel(null); }}
               actions={{
                 sources: maxSourceNum(),
@@ -1285,7 +1331,7 @@ export default function BuildWizard({
            </div>
            {/* Inspector: the selected node's full form, right beside the canvas. */}
            <aside className={"wr-noprint " + (full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
-             {mergeSel && multiSource ? renderCombineForm() : graphSel != null && pipeline[graphSel] ? (
+             {saveSel ? renderOutputForm() : mergeSel && multiSource ? renderCombineForm() : graphSel != null && pipeline[graphSel] ? (
                <div>
                  <div className="mb-2 flex items-center px-1">
                    <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
