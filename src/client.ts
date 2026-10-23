@@ -300,7 +300,8 @@ function resultToText(result: any): string | null {
 export function extractNeeds(result: any): string | null {
   const testo = resultToText(result);
   if (!testo) return null;
-  const m = testo.match(/^NEEDS:\s*([\s\S]*)$/);
+  // Anywhere at a line start: the agent sometimes narrates a step or two before its answer.
+  const m = testo.match(/^NEEDS:\s*([\s\S]*)$/m);
   return m ? (m[1].trim() || 'The agent needs more detail to design this.') : null;
 }
 
@@ -398,7 +399,7 @@ export function extractPipelineYaml(result: any): string | null {
   const testo = resultToText(result);
   if (!testo) return null;
   let y = testo;
-  if (y.startsWith('NEEDS:')) return null;               // l'agente chiede, non propone
+  if (/^NEEDS:/m.test(y)) return null;                 // l'agente chiede, non propone (anche dopo una premessa)
 
   // recinti markdown, con o senza linguaggio
   const fence = y.match(/```(?:ya?ml)?\s*\n([\s\S]*?)```/);

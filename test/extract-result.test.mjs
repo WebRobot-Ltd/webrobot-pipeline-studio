@@ -88,3 +88,10 @@ test('extractLicenceNote', () => {
   assert.equal(extractPipelineYaml(r), YAML);
   assert.equal(extractLicenceNote({ run: { designer: YAML } }), null);
 });
+
+// 10-23: narration before the answer ("Try the browser route.\nNEEDS: …") — still a question, never a pipeline.
+test('NEEDS after narration', () => {
+  const r = { run: { designer: 'Page loads in the browser.\nTry the browser route.\nNEEDS: give me one result card.' } };
+  assert.equal(extractNeeds(r), 'give me one result card.');
+  assert.equal(extractPipelineYaml(r), null);
+});
