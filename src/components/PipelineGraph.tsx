@@ -7,7 +7,7 @@
 // v2 (user 10-23: "very compressed, the nodes can't be moved"): React Flow canvas — tall, pan/zoom, nodes
 // draggable (positions kept while the page is open), dry-run badges on the nodes, + nodes at each lane end.
 import { useMemo, useState } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react';
+import { ReactFlow, Background, Controls, MiniMap, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { PipelineRow } from '../yaml';
 
@@ -86,7 +86,8 @@ export default function PipelineGraph({
       };
     };
     const addNode = (src: number | 'shared', x: number, y: number): Node => ({
-      id: `add-${src}`, position: pos(`add-${src}`, x, y + 18),
+      // below the lane end, so the arc into the save node does not run through it
+      id: `add-${src}`, position: pos(`add-${src}`, x - 60, y + 95),
       data: { label: <span title="Add a stage here (then pick it from the catalogue)" className="text-lg text-slate-400">+</span>, src },
       style: { width: 44, height: 44, borderRadius: 999, border: '1px dashed #94a3b8', background: '#f8fafc',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer' },
@@ -126,6 +127,38 @@ export default function PipelineGraph({
       if (shared.length) es.push({ id: 'e-merge-tail', source: 'merge', target: `s${shared[0]}`, type: 'smoothstep', animated: true });
       chain(shared.map((i) => `s${i}`));
     }
+
+    // End node: where the data lands. The YAML always writes `output: {format: parquet, mode:
+    // overwrite}`, so the graph shows it instead of letting the last stage's arrow end in nothing.
+    let endX = 0, endY = 0, endFrom: string | null = null;
+    if (multi) {
+      const mx = maxLen * COL;
+      endX = mx + 170 + (shared.length + 1) * COL;
+      endY = ((laneNums.length - 1) * ROW) / 2;
+      endFrom = shared.length ? `s${shared[shared.length - 1]}` : 'merge';
+    } else if (laneNums.length) {
+      const idxs = lanes.get(laneNums[0])!;
+      endX = (idxs.length + 1) * COL;
+      endFrom = idxs.length ? `s${idxs[idxs.length - 1]}` : null;
+    }
+    ns.push({ id: 'save', position: pos('save', endX, endY), selectable: false,
+      data: { label: (
+        <div className="text-left">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xl ring-1 ring-emerald-200">💾</span>
+            <span>
+              <span className="block font-mono text-sm font-semibold text-slate-900">save</span>
+              <span className="block text-xs text-slate-500">parquet · overwrite</span>
+            </span>
+          </div>
+        </div>
+      ) },
+      style: { width: 190, padding: 10, borderRadius: 12, background: '#f0fdf4', border: '1px solid #86efac' } });
+    if (endFrom) es.push({ id: 'e-save', source: endFrom, target: 'save', type: 'smoothstep' });
+
+    // Horizontal flow: arcs leave a node on the right and enter on the left (React Flow's
+    // default handles are bottom/top, which made every arc loop under and over the nodes).
+    for (const n of ns) { n.sourcePosition = Position.Right; n.targetPosition = Position.Left; }
     return { nodes: ns, edges: es };
   }, [pipeline, lookOf, run, selected, moved, onRemove]);
 
