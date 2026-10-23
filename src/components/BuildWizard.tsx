@@ -22,6 +22,7 @@ import {
   putPipelineDraft,
   deletePipelineDraft,
   startDesignerRun,
+  listPipelines,
   extractRunError,
   extractLicenceNote,
   extractRecipePatch,
@@ -166,6 +167,19 @@ export default function BuildWizard({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
+  // "Save to": a NEW agent (named here) or an EXISTING agent of the org — the designer pipeline becomes
+  // that agent's pipeline (user 10-23: starting from the designer, the pipeline must go to the agent).
+  const [saveTarget, setSaveTarget] = useState<string>('');
+  const [agentsList, setAgentsList] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    listPipelines().then((r: any) => {
+      const demos: any[] = Array.isArray(r) ? r : (r?.demos || []);
+      const seen = new Set<string>();
+      setAgentsList(demos.filter((d) => d?.agent_id != null && !seen.has(String(d.agent_id)) && seen.add(String(d.agent_id)))
+        .map((d) => ({ id: String(d.agent_id), name: String(d.agent_name || d.display_name || d.pipeline_name) }))
+        .sort((a, b) => a.name.localeCompare(b.name)));
+    }).catch(() => setAgentsList([]));
+  }, []);
 
   useEffect(() => {
     getStageCatalog()
@@ -647,18 +661,19 @@ export default function BuildWizard({
   };
 
   const handleSave = async (execute: boolean) => {
-    if (!pipelineName.trim()) { setSaveMsg('Name the pipeline first.'); return; }
+    if (!saveTarget && !pipelineName.trim()) { setSaveMsg('Name the new agent first.'); return; }
     setSaving(true);
     setSaveMsg(null);
     try {
       const res = await saveGeneratedPipeline({
-        pipeline_name: pipelineName.trim(),
+        ...(saveTarget ? { agent_id: Number(saveTarget) } : { pipeline_name: pipelineName.trim() }),
         pipeline_yaml: yaml,
         execute,
         // Omesso quando non scelto: il server ricade sull'organizzazione del chiamante.
         ...(orgId ? { organization_id: orgId } : {}),
       });
-      setSaveMsg(`Saved as “${pipelineName}”${execute && res?.execution?.execution_id ? ` · run ${res.execution.execution_id}` : ''}.`);
+      const target = saveTarget ? (agentsList.find((a) => a.id === saveTarget)?.name || `agent ${saveTarget}`) : pipelineName;
+      setSaveMsg(`Saved to “${target}”${execute && res?.execution?.execution_id ? ` · run ${res.execution.execution_id}` : ''}.`);
     } catch (e) {
       setSaveMsg(e instanceof TenantStudioError ? `save → ${e.status}` : 'Save failed');
     } finally {
@@ -1183,13 +1198,23 @@ export default function BuildWizard({
         {/* Standalone persistence chrome — hidden when the host form owns saving. */}
         {!embedded && (
           <>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                value={pipelineName}
-                onChange={(e) => setPipelineName(e.target.value)}
-                placeholder="pipeline name"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
-              />
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <label className="text-sm font-medium text-slate-700" htmlFor="wr-save-target">Save to</label>
+              <select id="wr-save-target" value={saveTarget} onChange={(e) => setSaveTarget(e.target.value)}
+                title="The agent this pipeline belongs to: a new one, or an existing agent of your organization"
+                className="rounded-lg border border-slate-300 px-2 py-2 text-sm max-w-[260px]">
+                <option value="">+ New agent</option>
+                {agentsList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              {!saveTarget && (
+                <input
+                  value={pipelineName}
+                  onChange={(e) => setPipelineName(e.target.value)}
+                  placeholder="new agent name"
+                  className="min-w-[160px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15"
+                />
+              )}
+              {saveTarget && <span className="flex-1 text-sm text-slate-500">its pipeline is replaced by this one</span>}
               {/* Assegnazione a un'altra organizzazione: serve a chi configura per conto di un
                   cliente. L'autorizzazione resta del server (canAccessOrganization): questo
                   selettore e' una comodita', non il controllo. */}
