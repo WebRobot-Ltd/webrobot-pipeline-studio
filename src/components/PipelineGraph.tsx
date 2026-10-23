@@ -127,9 +127,16 @@ export default function PipelineGraph({
     if (multi) {
       const mx = maxLen * COL;
       const my = ((laneNums.length - 1) * ROW) / 2;
-      ns.push({ id: 'merge', position: pos('merge', mx, my + 14), selectable: false,
-        data: { label: <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">merge ⟹</span> },
-        style: { width: 110, borderRadius: 999, background: '#eef2ff', border: '1px solid #c7d2fe', padding: 8 } });
+      // The engine UNIONS the sources here by itself (unionByName, rows tagged with a `source` column):
+      // no union stage is needed — say so on the node (user 10-23).
+      ns.push({ id: 'merge', position: pos('merge', mx, my), selectable: false,
+        data: { label: (
+          <span className="block text-left" title="Automatic: the rows of every source are put together, columns matched by name; each row keeps a `source` column. No union stage needed.">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">⟹ union · automatic</span>
+            <span className="block text-[11px] leading-snug text-slate-600">all sources' rows, columns by name, + <code>source</code></span>
+          </span>
+        ) },
+        style: { width: 170, borderRadius: 12, background: '#eef2ff', border: '1px solid #c7d2fe', padding: 8 } });
       laneNums.forEach((n) => {
         const idxs = lanes.get(n)!;
         if (idxs.length) es.push({ id: `e-l${n}-merge`, source: `s${idxs[idxs.length - 1]}`, target: 'merge', type: 'smoothstep', animated: true });

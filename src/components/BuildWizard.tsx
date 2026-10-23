@@ -1760,6 +1760,13 @@ export default function BuildWizard({
                     </button>
                   ))}
                 </div>
+                {(listLane === 'shared' || listLane === 'all') && (
+                  <p className="mt-1 text-sm text-slate-600">
+                    ⟹ <b>Union is automatic:</b> the rows of every source are put together (columns matched by name, each row
+                    tagged with a <code>source</code> column) before the Shared stages run — no union stage needed.
+                    To pair rows across sources (e.g. same EAN), add a matching stage here.
+                  </p>
+                )}
               </li>
             );
           })()}
