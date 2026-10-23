@@ -181,6 +181,7 @@ export default function BuildWizard({
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [graphSel, setGraphSel] = useState<number | null>(null);
   const [graphFull, setGraphFull] = useState(false);
+  const [listLane, setListLane] = useState<number | 'shared' | 'all'>(1);   // list mode: which branch is shown
   useEffect(() => {
     if (!graphFull) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setGraphFull(false); };
@@ -922,14 +923,16 @@ export default function BuildWizard({
                     </span>
                   );
                 })()}
-                {multiSource && (
-                  // Lane of the stage: one source's own branch, or SHARED = after the sources are merged
+                {(
+                  // Lane of the stage (always selectable, in list and graph mode: with one source the
+                  // person must be able to start a second one from here): one source's own branch, or SHARED = after the sources are merged
                   // (e.g. a sentiment stage that must score the rows of every source together).
                   <select value={row._src === 'shared' ? 'shared' : String(row._src || 1)}
                     onChange={(e) => setLane(idx, e.target.value === 'shared' ? 'shared' : Number(e.target.value))}
                     title="Which branch this stage belongs to — Shared runs once on the merged rows of all sources"
                     className={`text-xs font-medium px-2 py-0.5 rounded-full border ${row._src === 'shared' ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
                     {Array.from({ length: maxSourceNum() }, (_, k) => k + 1).map((n) => <option key={n} value={n}>Source {n}</option>)}
+                    <option value={maxSourceNum() + 1}>+ New source {maxSourceNum() + 1}</option>
                     <option value="shared">Shared (after merge)</option>
                   </select>
                 )}
@@ -1630,7 +1633,31 @@ export default function BuildWizard({
         )}
 
         <ol className="space-y-3 mb-4">
-          {viewMode === 'list' && pipeline.map((row, idx) => renderStageCard(row, idx))}
+          {viewMode === 'list' && multiSource && (() => {
+            // One branch at a time (user 10-23: "not every node listed together"). The tab also sets
+            // "Add to", so stages added from the catalogue land in the branch being looked at.
+            const tabs: (number | 'shared' | 'all')[] = [...Array.from({ length: maxSourceNum() }, (_, k) => k + 1), 'shared', 'all'];
+            const count = (t: number | 'shared' | 'all') => t === 'all' ? pipeline.length
+              : pipeline.filter((r) => (t === 'shared' ? r._src === 'shared' : (r._src ?? 1) === t)).length;
+            return (
+              <li className="list-none">
+                <div className="mb-1 inline-flex flex-wrap rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+                  {tabs.map((t) => (
+                    <button key={String(t)} type="button"
+                      onClick={() => { setListLane(t); if (t !== 'all') setTarget(t); }}
+                      className={`rounded-md px-3 py-1 font-medium ${listLane === t ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                      {t === 'all' ? 'All' : t === 'shared' ? 'Shared' : `Source ${t}`} <span className="opacity-70">({count(t)})</span>
+                    </button>
+                  ))}
+                </div>
+              </li>
+            );
+          })()}
+          {viewMode === 'list' && pipeline.map((row, idx) => {
+            if (multiSource && listLane !== 'all'
+                && (listLane === 'shared' ? row._src !== 'shared' : (row._src ?? 1) !== listLane)) return null;
+            return renderStageCard(row, idx);
+          })}
         </ol>
 
         <div className="grid grid-cols-2 gap-2 mb-3">
