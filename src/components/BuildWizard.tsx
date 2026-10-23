@@ -52,6 +52,7 @@ import OddsMarketsEditor from './OddsMarketsEditor';
 import PythonExtensionsEditor from './PythonExtensionsEditor';
 import { OddsMarket, PyExtension, TraceAction } from '../yaml';
 import DataPreview from './DataPreview';
+import PipelineGraph from './PipelineGraph';
 import SelectorPicker, {
   type PickField,
   type PickResult,
@@ -172,6 +173,9 @@ export default function BuildWizard({
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
   const [bottomTab, setBottomTab] = useState<'data' | 'yaml' | 'steps'>('data');
+  // Two definition modes over the SAME rows (10-23): the list, and the graph (lanes per source → shared tail).
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+  const [graphSel, setGraphSel] = useState<number | null>(null);
   // The designer agent's steps, LIVE while it works (redesign 10-23, after Kadoa), and the run to stop.
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [liveEid, setLiveEid] = useState<string | null>(null);
@@ -1050,7 +1054,7 @@ export default function BuildWizard({
       )}
 
       {/* Catalogue */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section id="wr-stage-catalogue" className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-bold text-slate-900">Stage catalogue</h3>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{catalog.length} stages</span>
@@ -1133,7 +1137,35 @@ export default function BuildWizard({
 
       {/* Pipeline + preview */}
       <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">{label || 'Pipeline'}</h3>
+        <div className="mb-3 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-700">{label || 'Pipeline'}</h3>
+          <span className="flex-1" />
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+            {(['list', 'graph'] as const).map((m) => (
+              <button key={m} type="button" onClick={() => { setViewMode(m); setGraphSel(null); }}
+                className={`rounded-md px-3 py-1 font-medium ${viewMode === m ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                {m === 'list' ? 'List' : 'Graph'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {viewMode === 'graph' && (
+          <div className="mb-4">
+            <PipelineGraph
+              pipeline={pipeline}
+              lookOf={(st) => lookOf(st, findSpec(st)?.category)}
+              run={rowRun}
+              selected={graphSel}
+              onSelect={(i) => setGraphSel(i === graphSel ? null : i)}
+              onRemove={(i) => { removeStage(i); setGraphSel(null); }}
+              onAddTo={(src) => {
+                setTarget(src as any);
+                document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            />
+            <p className="mt-2 text-sm text-slate-500">{graphSel == null ? 'Click a stage to edit it here · + adds a stage to that lane from the catalogue.' : `Editing stage ${graphSel + 1}.`}</p>
+          </div>
+        )}
 
         {/* Guida alla sequenza.
             Una pipeline si legge in quattro tempi — prendi, estrai, trasforma, salva — ma il
@@ -1186,6 +1218,7 @@ export default function BuildWizard({
 
         <ol className="space-y-3 mb-4">
           {pipeline.map((row, idx) => {
+            if (viewMode === 'graph' && graphSel !== idx) return null;   // graph mode: only the selected stage
             const spec = findSpec(row.stage);
             const args = (spec?.arg_schema || []).map((a) => a.name);
             const look = lookOf(row.stage, spec?.category);
