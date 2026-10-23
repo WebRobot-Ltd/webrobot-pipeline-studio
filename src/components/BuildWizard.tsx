@@ -46,6 +46,7 @@ import FieldEditor from './FieldEditor';
 import OddsMarketsEditor from './OddsMarketsEditor';
 import PythonExtensionsEditor from './PythonExtensionsEditor';
 import { OddsMarket, PyExtension, TraceAction } from '../yaml';
+import DataPreview from './DataPreview';
 import SelectorPicker, {
   type PickField,
   type PickResult,
@@ -164,6 +165,7 @@ export default function BuildWizard({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
+  const [validateResult, setValidateResult] = useState<any>(null);
 
   useEffect(() => {
     getStageCatalog()
@@ -633,10 +635,12 @@ export default function BuildWizard({
   );
 
   const handleValidate = async () => {
-    setValidation('validating…');
+    setValidation('Running the pipeline on the real site (dry run)…');
     try {
+      setValidateResult(null);
       const r = await wizardValidate({ yaml });
-      setValidation(r?.valid ? `valid · ${r?.record_count ?? '?'} records` : `invalid: ${r?.error || 'see steps'}`);
+      setValidateResult(r);
+      setValidation(null);
     } catch (e) {
       setValidation(e instanceof TenantStudioError ? `validate → ${e.status}` : 'validation failed');
     }
@@ -1207,7 +1211,8 @@ export default function BuildWizard({
                 ✓ Validate
               </button>
             </div>
-            {validation && <p className="text-sm text-slate-500 mb-2">{validation}</p>}
+            {validation && <p className="text-base text-slate-700 mb-2">{validation}</p>}
+            {validateResult && <div className="mb-3"><DataPreview result={validateResult} /></div>}
 
             <div className="flex gap-2">
               <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
