@@ -65,7 +65,7 @@ import SelectorPicker, {
   type PickerMode,
 } from './SelectorPicker';
 
-import { lookOf, PHASES, sequenceAdvice, friendlyName } from '../stageIdentity';
+import { lookOf, PHASES, sequenceAdvice, friendlyName, isLoadStage, isSaveStage } from '../stageIdentity';
 interface CatalogStage extends StageSpec {
   category?: string;
   description?: string;
@@ -432,7 +432,7 @@ export default function BuildWizard({
 
   const groupedCatalog = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    const matched = catalog.filter(
+    const matched = catalog.filter((s) => !/^(load|save)_/.test(s.stage_name)).filter(
       (s) => !q || s.stage_name.toLowerCase().includes(q) || friendlyName(s.stage_name).toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
     const byCat = new Map<string, CatalogStage[]>();
     for (const s of matched) {
@@ -951,6 +951,22 @@ export default function BuildWizard({
                 className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}>✕</button>
             </span>
           </div>
+          {(isLoadStage(row.stage) || isSaveStage(row.stage)) && (() => {
+            const load = isLoadStage(row.stage);
+            const opts = catalog.map((c) => c.stage_name)
+              .filter((n) => (load ? isLoadStage(n) && n !== 'wget' : isSaveStage(n)));
+            if (!opts.includes(row.stage)) opts.unshift(row.stage);
+            return (
+              <label className="mb-2 flex items-center gap-2 text-sm">
+                <span className="w-28 shrink-0 text-slate-600">{load ? 'Source type' : 'Destination'}</span>
+                <select value={row.stage}
+                  onChange={(e) => patchRow(idx, { stage: e.target.value, args: {}, _fields: undefined, _trace: undefined })}
+                  className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
+                  {opts.map((n) => <option key={n} value={n}>{friendlyName(n)}</option>)}
+                </select>
+              </label>
+            );
+          })()}
           {['extract', 'flatSelect'].includes(row.stage) ? (
             <>
               {row.stage === 'flatSelect' && (
@@ -1481,6 +1497,32 @@ export default function BuildWizard({
               cui si sceglie: e' dove servono di piu'. La categoria grezza del catalogo resta come
               titolo del gruppo, ma sotto ogni voce porta la sua famiglia, che e' normalizzata e
               coerente anche per i 26 stage che una categoria non ce l'hanno. */}
+          {/* Generic LOAD / SAVE: one entry each instead of the 30 load_ and save_ stages; the kind of source
+              or destination is chosen inside the node (user 10-23: "here it is 1-1 with the stages"). */}
+          {(() => {
+            const q = filter.trim().toLowerCase();
+            const gens = [
+              { stage: 'fetch', icon: '📥', title: 'Load data', blurb: 'A web page, a file (CSV, XML…), a database or a stream — choose it in the node' },
+              { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: '💾', title: 'Save data', blurb: 'Also write the result to a file or a database (CSV, Postgres, BigQuery…)' },
+            ].filter((g) => !q || (g.title + ' ' + g.blurb).toLowerCase().includes(q) || 'load save csv database file'.includes(q));
+            if (!gens.length) return null;
+            return (
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Load &amp; save</p>
+                {gens.map((g) => (
+                  <button key={g.title} type="button" onClick={() => addStage(g.stage)} title={g.blurb}
+                    className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-slate-200 hover:bg-slate-50">
+                    <span aria-hidden="true" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-lg leading-none ring-1 ring-sky-200">{g.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-slate-800">{g.title}</span>
+                      <span className="block truncate text-xs text-slate-500">{g.blurb}</span>
+                    </span>
+                    <span className="shrink-0 rounded-md bg-brand-900 px-2 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">+ Add</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           {groupedCatalog.map(([cat, stages]) => {
             const groupLook = lookOf(stages[0]?.stage_name || '', stages[0]?.category);
             return (

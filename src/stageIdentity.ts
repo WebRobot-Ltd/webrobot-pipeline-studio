@@ -163,9 +163,7 @@ const FRIENDLY: Record<string, string> = {
   explore: 'Follow the next pages', intelligentExplore: 'Find and follow the next pages', intelligentWgetExplore: 'Find and follow the next pages',
   flatSelect: 'Extract the items of a list', extract: 'Extract fields from the page', iextract: 'Extract fields by description',
   oddsSelect: 'Extract betting odds', odds_select: 'Extract betting odds',
-  load_csv: 'Load a CSV file', load_json: 'Load a JSON file', load_parquet: 'Load a Parquet file', load_excel: 'Load an Excel file',
   load_sitemap: 'Read a sitemap', load_rss: 'Read an RSS feed', rss: 'Read an RSS feed',
-  save_csv: 'Save as CSV', save_json: 'Save as JSON', save_parquet: 'Save as Parquet',
   sql_query: 'Transform with SQL', dedup: 'Remove duplicates', filter: 'Keep only matching rows', union: 'Merge the rows',
   sentiment: 'Score the sentiment', sentimentAnalysis: 'Score the sentiment', summarize: 'Summarise the text',
   translate: 'Translate the text', classify: 'Classify the rows', embed: 'Compute embeddings',
@@ -173,9 +171,24 @@ const FRIENDLY: Record<string, string> = {
   socialAPI: 'Read a social / financial API', eurostatAPI: 'Eurostat statistics', istatAPI: 'ISTAT statistics',
 };
 const ACRONYMS = new Set(['csv', 'json', 'xml', 'sql', 'api', 'url', 'rss', 'pdf', 'html', 'llm', 'ai', 'ocr', 'eu', 'it', 'ean', 'id', 'rag', 'http']);
+/** Where a load_* / save_* stage reads or writes, in words. */
+const TARGETS: Record<string, string> = {
+  csv: 'a CSV file', json: 'a JSON file', parquet: 'Parquet files', avro: 'an Avro file', xml: 'an XML file',
+  excel: 'an Excel file', delta: 'Delta Lake', iceberg: 'Iceberg', bigquery: 'BigQuery', athena: 'Athena',
+  mongodb: 'MongoDB', cassandra: 'Cassandra', elasticsearch: 'Elasticsearch', kafka: 'Kafka',
+  postgres: 'PostgreSQL', mysql: 'MySQL', db: 'a database (JDBC)', union: 'several sources at once',
+};
+/** Generic LOAD / SAVE: the concrete stage is a choice inside one node, not a catalogue entry each. */
+export const isLoadStage = (s: string) => /^load_/.test(s) || ['fetch', 'wget', 'visit', 'resilientFetch'].includes(s);
+export const isSaveStage = (s: string) => /^save_/.test(s);
 export function friendlyName(stage: string): string {
   if (!stage) return '';
   if (FRIENDLY[stage]) return FRIENDLY[stage];
+  const io = /^(load|save)_(.+)$/.exec(stage);
+  if (io) {
+    const t = TARGETS[io[2]] || friendlyName(io[2]);
+    return io[1] === 'load' ? `Load from ${t}` : `Save to ${t}`;
+  }
   const py = /^python_[a-z_]+:(.+)$/.exec(stage);
   if (py) return `Python: ${friendlyName(py[1])}`;
   const words = stage
