@@ -381,6 +381,18 @@ export function extractRunError(result: any): string | null {
   return null;
 }
 
+/**
+ * The designer's licence REMINDER: a line `LICENCE: <text>` before the pipeline when the catalogue marks
+ * the source as licence-required (its terms restrict automated collection or reserve text and data
+ * mining). A reminder, not a refusal: the person holds the rights (/trust/terms). Null when absent.
+ */
+export function extractLicenceNote(result: any): string | null {
+  const testo = resultToText(result);
+  if (!testo) return null;
+  const m = testo.match(/^\s*LICENCE:\s*(.+)$/m);
+  return m ? m[1].trim() : null;
+}
+
 export function extractPipelineYaml(result: any): string | null {
   if (extractRunError(result)) return null;              // il run si e' fermato senza risposta
   const testo = resultToText(result);
@@ -433,6 +445,8 @@ export interface PipelineDraft {
   pipeline_yaml: string;
   note: string | null;
   updated_at: string | null;
+  /** Reminder from the agent when the source's terms restrict automated collection (not a block). */
+  licence_note?: string | null;
 }
 export const getPipelineDraft = async (context?: string): Promise<PipelineDraft | null> => {
   try {

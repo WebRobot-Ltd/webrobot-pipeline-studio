@@ -23,6 +23,7 @@ import {
   deletePipelineDraft,
   startDesignerRun,
   extractRunError,
+  extractLicenceNote,
   getAgenticRunStatus,
   getAgenticRunResult,
   extractPipelineYaml,
@@ -427,6 +428,7 @@ export default function BuildWizard({
         pipeline_yaml: y,
         note: `Designed by the agent from: \u201c${promptLabel}\u201d \u2014 validated against the stage catalogue`,
         updated_at: new Date().toISOString(),
+        licence_note: extractLicenceNote(result),
       });
       setDraftOpen(true);
       setAskText('');
@@ -501,7 +503,7 @@ export default function BuildWizard({
       const qs = extractQuestions(result);
       const y = extractPipelineYaml(result);
       if ((!qs || qs.length === 0) && y) {
-        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y,
+        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result),
           note: `Designed by the agent from: \u201c${prompt}\u201d`, updated_at: new Date().toISOString() });
         setDraftOpen(true); return;
       }
@@ -543,7 +545,7 @@ export default function BuildWizard({
           : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
         return;
       }
-      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y,
+      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result),
         note: 'Designed from your guided answers', updated_at: new Date().toISOString() });
       setDraftOpen(true);
       setGuidedQuestions(null); setAskText('');
@@ -797,10 +799,10 @@ export default function BuildWizard({
       )}
       {embedded && chatSlot && <div className="lg:col-span-2 flex justify-end">{chatSlot}</div>}
       {askErr && (
-        <p className="lg:col-span-2 text-xs text-rose-600">{askErr}</p>
+        <p className="lg:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-base leading-relaxed text-rose-900">{askErr}</p>
       )}
       {askPhase && !askErr && (
-        <p className="lg:col-span-2 text-xs text-slate-500">{askPhase}</p>
+        <p className="lg:col-span-2 text-base text-slate-700">{askPhase}</p>
       )}
 
       {/* La proposta in attesa. Compare quando l'assistente ha scritto una bozza: nulla e' cambiato
@@ -808,7 +810,7 @@ export default function BuildWizard({
       {draft && (
         <div className="lg:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-blue-900">
+            <span className="text-base font-semibold text-blue-900">
               🤖 The assistant proposes a pipeline
             </span>
             {draft.pipeline_name && (
@@ -818,19 +820,26 @@ export default function BuildWizard({
             )}
             <span className="flex-1" />
             <button type="button" onClick={() => setDraftOpen((v) => !v)}
-              className="rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+              className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100">
               {draftOpen ? 'Hide changes' : 'See changes'}
             </button>
             <button type="button" onClick={applyDraft}
-              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700">
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
               Apply to the canvas
             </button>
             <button type="button" onClick={dismissDraft}
-              className="rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white">
+              className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-white">
               Discard
             </button>
           </div>
-          {draft.note && <p className="mt-1 text-xs text-blue-800">{draft.note}</p>}
+          {draft.note && <p className="mt-1 text-sm text-blue-900">{draft.note}</p>}
+          {/* Promemoria, non blocco: i diritti sulle fonti sono dell'utente (/trust/terms). Se l'agente
+              ha trovato la fonte marcata "a licenza" nel catalogo, lo dice in modo specifico. */}
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900">
+            {draft.licence_note ? <><strong>Licence reminder:</strong> {draft.licence_note} </> : null}
+            You are responsible for the rights and licences of the sources you collect and for what you do with the
+            data — see the <a href="https://www.webrobot.eu/trust/terms" target="_blank" rel="noopener noreferrer" className="underline">terms of use</a>.
+          </p>
           {draftOpen && (
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               {/* Un diff riga per riga, non un semplice "prima/dopo": su una pipeline lunga la
@@ -846,8 +855,8 @@ export default function BuildWizard({
                 </pre>
               </div>
               <div>
-                <p className="mb-1 text-xs font-medium text-slate-600">Proposed</p>
-                <pre className="max-h-64 overflow-auto rounded-md border border-blue-200 bg-white p-2 text-[11px] leading-snug">
+                <p className="mb-1 text-sm font-medium text-slate-700">Proposed</p>
+                <pre className="max-h-64 overflow-auto rounded-md border border-blue-200 bg-white p-2 text-xs leading-snug">
                   {diffLines(pipeline.length ? yaml : '', draft.pipeline_yaml).map((l, i) => (
                     <div key={i} className={l.right === null ? 'bg-rose-50' : l.changed ? 'bg-amber-50' : ''}>
                       {l.right ?? ''}

@@ -4,7 +4,7 @@
 // Copre il bug del 29-09-2026: il result della riga arriva come STRINGA JSON (il campo lato
 // server e' String/JSONB, non un oggetto), quindi l'estrazione DEVE aprirla prima, altrimenti
 // finisce sul canvas il blob JSON grezzo invece della pipeline.
-import { extractPipelineYaml, extractNeeds, extractQuestions, extractRunError } from '../dist/client.js';
+import { extractPipelineYaml, extractNeeds, extractQuestions, extractRunError, extractLicenceNote } from '../dist/client.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -79,4 +79,12 @@ test('extractRunError', () => {
   assert.equal(extractPipelineYaml(stopped), null);
   assert.equal(extractRunError({ run: { designer: YAML } }), null);
   assert.equal(extractRunError({ run: { designer: '' } }), null);
+});
+
+// 10-23: licence-restricted source = a REMINDER line before the pipeline, never a refusal.
+test('extractLicenceNote', () => {
+  const r = { run: { designer: 'LICENCE: ebay.it terms forbid automated collection — make sure you hold a licence.\n' + YAML } };
+  assert.equal(extractLicenceNote(r), 'ebay.it terms forbid automated collection — make sure you hold a licence.');
+  assert.equal(extractPipelineYaml(r), YAML);
+  assert.equal(extractLicenceNote({ run: { designer: YAML } }), null);
 });
