@@ -1,13 +1,21 @@
 'use client';
 // GRAPH mode of the pipeline (second definition mode next to the list, 10-23). What it shows that the list
 // does not: a multi-source pipeline is a set of LANES (one per `sources[i]`, each fetching and extracting on
-// its own) that CONVERGE into the shared tail (union / combine / output). The list only tagged each row
-// "Source N"; here the branches and where they merge are visible. Same rows, same YAML: a view, not a
-// second model.
+// its own) that CONVERGE into the shared tail (union / combine / output). Same rows, same YAML: a view, not
+// a second model.
+//
+// v2 (user 10-23: "very compressed, the nodes can't be moved"): React Flow canvas — tall, pan/zoom, nodes
+// draggable (positions kept while the page is open), dry-run badges on the nodes, + nodes at each lane end.
+import { useMemo, useState } from 'react';
+import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import type { PipelineRow } from '../yaml';
 
 export interface GraphLook { icon: string; tile: string; label: string }
 export interface GraphRun { status: string | null; fill: number | null; rows: number | null }
+
+const COL = 270;   // horizontal step between stages
+const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
   pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo,
@@ -20,92 +28,130 @@ export default function PipelineGraph({
   onRemove: (idx: number) => void;
   onAddTo: (src: number | 'shared') => void;
 }) {
-  const lanes = new Map<number, number[]>();
-  const shared: number[] = [];
-  pipeline.forEach((r, i) => {
-    if (r._src === 'shared') shared.push(i);
-    else {
-      const n = typeof r._src === 'number' ? r._src : 1;
-      if (!lanes.has(n)) lanes.set(n, []);
-      lanes.get(n)!.push(i);
+  // positions the person dragged, by node id (kept while the page is open; the YAML has no layout)
+  const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
+
+  const { nodes, edges } = useMemo(() => {
+    const lanes = new Map<number, number[]>();
+    const shared: number[] = [];
+    pipeline.forEach((r, i) => {
+      if (r._src === 'shared') shared.push(i);
+      else {
+        const n = typeof r._src === 'number' ? r._src : 1;
+        if (!lanes.has(n)) lanes.set(n, []);
+        lanes.get(n)!.push(i);
+      }
+    });
+    const laneNums = [...lanes.keys()].sort((a, b) => a - b);
+    const multi = laneNums.length > 1 || shared.length > 0;
+    const ns: Node[] = [];
+    const es: Edge[] = [];
+    const pos = (id: string, x: number, y: number) => moved[id] || { x, y };
+
+    const stageNode = (idx: number, x: number, y: number): Node => {
+      const row = pipeline[idx];
+      const look = lookOf(row.stage);
+      const rr = run?.[idx] || null;
+      const bad = /fail|error/i.test(rr?.status || '');
+      const id = `s${idx}`;
+      return {
+        id, position: pos(id, x, y),
+        data: {
+          label: (
+            <div className="text-left">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl ring-1 ${look.tile}`}>{look.icon}</span>
+                <span className="min-w-0">
+                  <span className="block truncate font-mono text-sm font-semibold text-slate-900">{idx + 1}. {row.stage}</span>
+                  <span className="block truncate text-xs text-slate-500">{look.label}</span>
+                </span>
+                <button type="button" title="Remove stage"
+                  onClick={(e) => { e.stopPropagation(); onRemove(idx); }}
+                  className="ml-auto rounded px-1 text-sm text-slate-400 hover:bg-rose-50 hover:text-rose-600">✕</button>
+              </div>
+              {rr && (rr.status || rr.rows != null) && (
+                <div className={`mt-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                  bad ? 'bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>
+                  {bad ? '✕ failed' : rr.rows != null ? `${rr.rows} rows · ${rr.fill}% filled` : '✓ ran'}
+                </div>
+              )}
+            </div>
+          ),
+        },
+        style: {
+          width: 230, padding: 10, borderRadius: 12, background: '#fff',
+          border: selected === idx ? '2px solid #4f46e5' : bad ? '1px solid #fda4af' : '1px solid #cbd5e1',
+          boxShadow: '0 1px 3px rgba(0,0,0,.08)',
+        },
+      };
+    };
+    const addNode = (src: number | 'shared', x: number, y: number): Node => ({
+      id: `add-${src}`, position: pos(`add-${src}`, x, y + 18),
+      data: { label: <span title="Add a stage here (then pick it from the catalogue)" className="text-lg text-slate-400">+</span>, src },
+      style: { width: 44, height: 44, borderRadius: 999, border: '1px dashed #94a3b8', background: '#f8fafc',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer' },
+      connectable: false,
+    });
+    const chain = (ids: string[]) => ids.forEach((id, k) => {
+      if (k > 0) es.push({ id: `e-${ids[k - 1]}-${id}`, source: ids[k - 1], target: id, type: 'smoothstep' });
+    });
+
+    let maxLen = 0;
+    laneNums.forEach((n, li) => {
+      const idxs = lanes.get(n)!;
+      maxLen = Math.max(maxLen, idxs.length + 1);
+      const y = li * ROW;
+      if (multi) {
+        ns.push({ id: `lane-${n}`, position: pos(`lane-${n}`, -150, y + 22), selectable: false, draggable: true,
+          data: { label: <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source {n}</span> },
+          style: { width: 110, border: 'none', background: 'transparent', padding: 0 } });
+      }
+      idxs.forEach((idx, k) => ns.push(stageNode(idx, k * COL, y)));
+      ns.push(addNode(n, idxs.length * COL, y));
+      chain(idxs.map((i) => `s${i}`));
+    });
+
+    if (multi) {
+      const mx = maxLen * COL;
+      const my = ((laneNums.length - 1) * ROW) / 2;
+      ns.push({ id: 'merge', position: pos('merge', mx, my + 14), selectable: false,
+        data: { label: <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">merge ⟹</span> },
+        style: { width: 110, borderRadius: 999, background: '#eef2ff', border: '1px solid #c7d2fe', padding: 8 } });
+      laneNums.forEach((n) => {
+        const idxs = lanes.get(n)!;
+        if (idxs.length) es.push({ id: `e-l${n}-merge`, source: `s${idxs[idxs.length - 1]}`, target: 'merge', type: 'smoothstep', animated: true });
+      });
+      shared.forEach((idx, k) => ns.push(stageNode(idx, mx + 170 + k * COL, my)));
+      ns.push(addNode('shared', mx + 170 + shared.length * COL, my));
+      if (shared.length) es.push({ id: 'e-merge-tail', source: 'merge', target: `s${shared[0]}`, type: 'smoothstep', animated: true });
+      chain(shared.map((i) => `s${i}`));
     }
-  });
-  const laneNums = [...lanes.keys()].sort((a, b) => a - b);
-  const multi = laneNums.length > 1 || shared.length > 0;
-
-  const Node = ({ idx }: { idx: number }) => {
-    const row = pipeline[idx];
-    const look = lookOf(row.stage);
-    const rr = run?.[idx] || null;
-    const bad = /fail|error/i.test(rr?.status || '');
-    return (
-      <div
-        role="button" tabIndex={0}
-        onClick={() => onSelect(idx)}
-        onKeyDown={(e) => { if (e.key === 'Enter') onSelect(idx); }}
-        className={`group relative w-48 shrink-0 cursor-pointer rounded-xl border bg-white p-2.5 text-left shadow-sm transition hover:shadow-md ${
-          selected === idx ? 'border-brand-500 ring-2 ring-brand-200' : bad ? 'border-rose-300' : 'border-slate-200'}`}
-      >
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg ring-1 ${look.tile}`}>{look.icon}</span>
-          <span className="min-w-0">
-            <span className="block truncate font-mono text-sm font-semibold text-slate-900">{row.stage}</span>
-            <span className="block truncate text-xs text-slate-500">{look.label}</span>
-          </span>
-        </div>
-        {rr && (rr.status || rr.rows != null) && (
-          <div className={`mt-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
-            bad ? 'bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>
-            {bad ? '✕ failed' : rr.rows != null ? `${rr.rows} rows · ${rr.fill}% filled` : '✓ ran'}
-          </div>
-        )}
-        <button type="button" title="Remove stage"
-          onClick={(e) => { e.stopPropagation(); onRemove(idx); }}
-          className="absolute -right-2 -top-2 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs text-rose-600 shadow group-hover:inline-flex">✕</button>
-      </div>
-    );
-  };
-
-  const Arrow = () => <span className="shrink-0 px-1 text-xl text-slate-300" aria-hidden="true">→</span>;
-  const Add = ({ src }: { src: number | 'shared' }) => (
-    <button type="button" onClick={() => onAddTo(src)} title="Add a stage here (then pick it from the catalogue)"
-      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-dashed border-slate-300 text-lg text-slate-400 hover:border-brand-400 hover:text-brand-600">+</button>
-  );
+    return { nodes: ns, edges: es };
+  }, [pipeline, lookOf, run, selected, moved, onRemove]);
 
   if (!pipeline.length) {
     return <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No stages yet — describe what you want, or add stages from the catalogue.</p>;
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <div className={`flex items-center gap-4 ${multi ? '' : ''}`}>
-        <div className="flex flex-col gap-4">
-          {laneNums.map((n) => (
-            <div key={n} className="flex items-center">
-              {multi && <span className="mr-3 w-20 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">Source {n}</span>}
-              {lanes.get(n)!.map((idx, k) => (
-                <span key={idx} className="flex items-center">{k > 0 && <Arrow />}<Node idx={idx} /></span>
-              ))}
-              <span className="ml-2"><Add src={n} /></span>
-            </div>
-          ))}
-        </div>
-        {multi && (
-          <>
-            <div className="flex shrink-0 flex-col items-center text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wide">merge</span>
-              <span className="text-2xl" aria-hidden="true">⟹</span>
-            </div>
-            <div className="flex items-center">
-              {shared.map((idx, k) => (
-                <span key={idx} className="flex items-center">{k > 0 && <Arrow />}<Node idx={idx} /></span>
-              ))}
-              <span className="ml-2"><Add src="shared" /></span>
-            </div>
-          </>
-        )}
-      </div>
-      {multi && <p className="mt-3 text-xs text-slate-500">Each source runs on its own; their rows are combined, then the shared stages run on the union.</p>}
+    <div style={{ height: 560 }} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+      <ReactFlow
+        nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+        minZoom={0.2} maxZoom={1.6} proOptions={{ hideAttribution: true }}
+        nodesDraggable nodesConnectable={false}
+        onNodesChange={(chs) => chs.forEach((ch: any) => {
+          if (ch.type === 'position' && ch.position) setMoved((m) => ({ ...m, [ch.id]: ch.position }));
+        })}
+        onNodeClick={(_, n) => {
+          const id = String(n.id);
+          if (id.startsWith('s')) onSelect(Number(id.slice(1)));
+          else if (id.startsWith('add-')) onAddTo(id === 'add-shared' ? 'shared' : Number(id.slice(4)));
+        }}
+      >
+        <Background gap={20} />
+        <Controls showInteractive={false} />
+        <MiniMap pannable zoomable style={{ height: 90, width: 140 }} />
+      </ReactFlow>
     </div>
   );
 }
