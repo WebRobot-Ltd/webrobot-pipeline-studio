@@ -224,6 +224,35 @@ export async function startDesignerRun(goal: string, currentYaml = ''): Promise<
   });
 }
 
+/** The run's log, from which the designer shows the agent's steps live (AGENTIC-TRACE lines). */
+export const getAgenticRunLogs = (executionId: string, tail = 400) =>
+  call<{ logs?: string }>('GET', `/agentic/${encodeURIComponent(executionId)}/logs?tail=${tail}`, { platform: true });
+
+/** Stop a designer run (the person pressed Stop). */
+export const cancelAgenticRun = (executionId: string) =>
+  call<any>('DELETE', `/agentic/${encodeURIComponent(executionId)}`, { platform: true });
+
+/** One step of an agent run, parsed from `AGENTIC-TRACE [<eid> node=<n>] <arrow> …` log lines. */
+export interface AgentStep { kind: 'call' | 'result' | 'text'; label: string; detail: string }
+
+export function parseAgentSteps(logs: string | null | undefined): AgentStep[] {
+  const out: AgentStep[] = [];
+  for (const raw of String(logs || '').split('\n')) {
+    const m = raw.match(/AGENTIC-TRACE \[[^\]]*\]\s*(→|←|💬)\s*(.*)$/);
+    if (!m) continue;
+    const [, arrow, rest] = m;
+    if (arrow === '→') {
+      const t = rest.match(/^([\w.:-]+)\((.*)$/);
+      out.push({ kind: 'call', label: (t ? t[1] : rest).replace(/^mcp__\w+?__/, ''), detail: (t ? t[2] : '').replace(/\)\s*$/, '') });
+    } else if (arrow === '←') {
+      out.push({ kind: 'result', label: /error|HTTP [45]\d\d/i.test(rest.slice(0, 200)) ? 'error' : 'ok', detail: rest });
+    } else {
+      out.push({ kind: 'text', label: 'says', detail: rest });
+    }
+  }
+  return out;
+}
+
 export const getAgenticRunStatus = (executionId: string) =>
   call<any>('GET', `/agentic/${encodeURIComponent(executionId)}`, { platform: true });
 

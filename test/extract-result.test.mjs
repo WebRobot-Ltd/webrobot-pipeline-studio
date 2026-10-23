@@ -103,3 +103,20 @@ test('RECIPE_PATCH line', async () => {
   assert.equal(extractRecipePatch(r), 'search');
   assert.equal(extractPipelineYaml(r), YAML);
 });
+
+// 10-23: live agent steps in the designer, parsed from the run log.
+test('parseAgentSteps', async () => {
+  const { parseAgentSteps } = await import('../dist/client.js');
+  const log = [
+    '(AgentSdkActor pid=1) AGENTIC-TRACE [agentic-9196497f node=designer] → mcp__webrobot__catalogSources({"domain": "farmae.it"})',
+    '(AgentSdkActor pid=1) AGENTIC-TRACE [agentic-9196497f node=designer] ← {"data":[{"name":"farmae_it"}]}',
+    '(AgentSdkActor pid=1) AGENTIC-TRACE [agentic-9196497f node=designer] ← Error calling tool: HTTP error 403',
+    'unrelated line',
+  ].join('\n');
+  const st = parseAgentSteps(log);
+  assert.equal(st.length, 3);
+  assert.equal(st[0].kind, 'call');
+  assert.equal(st[0].label, 'catalogSources');
+  assert.equal(st[0].detail, '{"domain": "farmae.it"}');
+  assert.equal(st[2].label, 'error');
+});

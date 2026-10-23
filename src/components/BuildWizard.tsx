@@ -26,6 +26,10 @@ import {
   extractRunError,
   extractLicenceNote,
   extractRecipePatch,
+  getAgenticRunLogs,
+  cancelAgenticRun,
+  parseAgentSteps,
+  type AgentStep,
   getAgenticRunStatus,
   getAgenticRunResult,
   extractPipelineYaml,
@@ -168,6 +172,18 @@ export default function BuildWizard({
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
   const [bottomTab, setBottomTab] = useState<'data' | 'yaml' | 'steps'>('data');
+  // The designer agent's steps, LIVE while it works (redesign 10-23, after Kadoa), and the run to stop.
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [liveEid, setLiveEid] = useState<string | null>(null);
+  const followLogs = useCallback(async (eid: string) => {
+    const lg = await getAgenticRunLogs(eid).catch(() => null);
+    if (lg?.logs) setAgentSteps(parseAgentSteps(lg.logs));
+  }, []);
+  const stopAgent = useCallback(async () => {
+    if (!liveEid) return;
+    try { await cancelAgenticRun(liveEid); } catch { /* the poll sees the final state */ }
+    setAskPhase('Stopping the agent…');
+  }, [liveEid]);
   // "Save to": a NEW agent (named here) or an EXISTING agent of the org — the designer pipeline becomes
   // that agent's pipeline (user 10-23: starting from the designer, the pipeline must go to the agent).
   const [saveTarget, setSaveTarget] = useState<string>('');
@@ -401,6 +417,7 @@ export default function BuildWizard({
    */
   const seguiRun = useCallback(async (eid: string, promptLabel: string) => {
     setGenerating(true);
+    setAgentSteps([]); setLiveEid(eid);
     setAskErr(null);
     setAskPhase('The agent is working\u2026');
     try {
@@ -412,12 +429,14 @@ export default function BuildWizard({
       while (Date.now() < scadenza) {
         const st = await getAgenticRunStatus(eid).catch(() => null);
         stato = String(st?.persistedStatus || st?.status || '');
-        if (['COMPLETED', 'FAILED', 'STOPPED'].includes(stato)) break;
+        if (['COMPLETED', 'FAILED', 'STOPPED', 'CANCELLED'].includes(stato)) break;
         setAskPhase(`The agent is working\u2026 (${stato.toLowerCase() || 'running'})`);
+        await followLogs(eid);
         await new Promise((r) => setTimeout(r, 5000));
       }
+      await followLogs(eid);
       if (stato !== 'COMPLETED') {
-        if (stato === 'FAILED' || stato === 'STOPPED') {
+        if (stato === 'FAILED' || stato === 'STOPPED' || stato === 'CANCELLED') {
           setAskErr(`The agent run ended as ${stato}.`);
           scartaRun(draftContext);                       // terminale: niente da riprendere
         } else {
@@ -458,7 +477,7 @@ export default function BuildWizard({
       setGenerating(false);
       setAskPhase(null);
     }
-  }, [draftContext]);
+  }, [draftContext, followLogs]);
 
   const askForPipeline = useCallback(async () => {
     const prompt = askText.trim();
@@ -485,23 +504,26 @@ export default function BuildWizard({
   // Attende un run fino all'esito e ne torna il result grezzo (o null, gestendo gia' l'errore).
   // Non salva/riprende come seguiRun: il guidato e' interattivo, l'utente e' qui.
   const pollUntilResult = useCallback(async (eid: string): Promise<any | null> => {
+    setAgentSteps([]); setLiveEid(eid);
     const scadenza = Date.now() + 4 * 60 * 1000;
     let stato = '';
     while (Date.now() < scadenza) {
       const st = await getAgenticRunStatus(eid).catch(() => null);
       stato = String(st?.persistedStatus || st?.status || '');
-      if (['COMPLETED', 'FAILED', 'STOPPED'].includes(stato)) break;
+      if (['COMPLETED', 'FAILED', 'STOPPED', 'CANCELLED'].includes(stato)) break;
       setAskPhase(`The agent is working\u2026 (${stato.toLowerCase() || 'running'})`);
+      await followLogs(eid);
       await new Promise((r) => setTimeout(r, 5000));
     }
+    await followLogs(eid);
     if (stato !== 'COMPLETED') {
-      setAskErr(stato === 'FAILED' || stato === 'STOPPED'
+      setAskErr(stato === 'FAILED' || stato === 'STOPPED' || stato === 'CANCELLED'
         ? `The agent run ended as ${stato}.`
         : 'The agent is taking a while \u2014 try again in a moment.');
       return null;
     }
     return await getAgenticRunResult(eid);
-  }, []);
+  }, [followLogs]);
 
   // ROUND 1: l'agente non progetta, chiede. Se invece ha gia' progettato (result e' una pipeline),
   // si salta al canvas: il guidato non deve intralciare quando la descrizione bastava.
@@ -849,6 +871,35 @@ export default function BuildWizard({
       )}
       {askPhase && !askErr && (
         <p className="lg:col-span-2 text-base text-slate-700">{askPhase}</p>
+      )}
+
+      {/* AGENT STEPS, live (redesign 10-23, after Kadoa): what the designer agent is doing — the recipe it
+          found, the pages it opened, each dry run — with a Stop button, instead of a bare "working…". */}
+      {!embedded && (generating || agentSteps.length > 0) && (
+        <section className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            {generating && <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-brand-600" />}
+            <h3 className="text-base font-semibold text-slate-900">{generating ? 'The agent is working' : 'What the agent did'}</h3>
+            <span className="text-sm text-slate-500">{agentSteps.filter((x) => x.kind === 'call').length} steps</span>
+            <span className="flex-1" />
+            {generating && liveEid && (
+              <button type="button" onClick={stopAgent} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Stop</button>
+            )}
+            {!generating && (
+              <button type="button" onClick={() => setAgentSteps([])} className="text-sm text-slate-500 hover:underline">Hide</button>
+            )}
+          </div>
+          <ol className="max-h-64 space-y-1 overflow-y-auto">
+            {agentSteps.filter((x) => x.kind !== 'text' || x.detail.length < 400).map((st, i) => (
+              <li key={i} className="text-sm leading-snug">
+                {st.kind === 'call' && <span className="text-slate-800">🔧 <b>{st.label}</b> <span className="text-slate-500">{st.detail.slice(0, 110)}</span></span>}
+                {st.kind === 'result' && <span className={`block pl-6 ${st.label === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>↳ {st.detail.slice(0, 160)}</span>}
+                {st.kind === 'text' && <span className="block text-slate-700">💬 {st.detail.slice(0, 200)}</span>}
+              </li>
+            ))}
+            {generating && agentSteps.length === 0 && <li className="text-sm text-slate-500">Starting… the first steps appear in a few seconds.</li>}
+          </ol>
+        </section>
       )}
 
       {/* La proposta in attesa. Compare quando l'assistente ha scritto una bozza: nulla e' cambiato
