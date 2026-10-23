@@ -325,7 +325,9 @@ export default function BuildWizard({
     const tick = async () => {
       const d = await getPipelineDraft(draftContext);
       if (!alive) return;
-      if (!d) { setDraft(null); return; }
+      // An empty server means "no CHAT draft": it must not wipe a proposal from a designer run, which
+      // lives only in the page (10-23: the Farmaè proposal appeared and vanished 4 s later).
+      if (!d) { setDraft((prev) => (prev && prev.source === 'agent' ? prev : null)); return; }
       if (d.updated_at && d.updated_at === dismissed.current) return;
       setDraft((prev) => (prev && prev.updated_at === d.updated_at ? prev : d));
     };
@@ -428,7 +430,7 @@ export default function BuildWizard({
         pipeline_yaml: y,
         note: `Designed by the agent from: \u201c${promptLabel}\u201d \u2014 validated against the stage catalogue`,
         updated_at: new Date().toISOString(),
-        licence_note: extractLicenceNote(result),
+        licence_note: extractLicenceNote(result), source: 'agent',
       });
       setDraftOpen(true);
       setAskText('');
@@ -503,7 +505,7 @@ export default function BuildWizard({
       const qs = extractQuestions(result);
       const y = extractPipelineYaml(result);
       if ((!qs || qs.length === 0) && y) {
-        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result),
+        setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), source: 'agent',
           note: `Designed by the agent from: \u201c${prompt}\u201d`, updated_at: new Date().toISOString() });
         setDraftOpen(true); return;
       }
@@ -545,7 +547,7 @@ export default function BuildWizard({
           : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
         return;
       }
-      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result),
+      setDraft({ context: draftContext, pipeline_name: null, pipeline_yaml: y, licence_note: extractLicenceNote(result), source: 'agent',
         note: 'Designed from your guided answers', updated_at: new Date().toISOString() });
       setDraftOpen(true);
       setGuidedQuestions(null); setAskText('');

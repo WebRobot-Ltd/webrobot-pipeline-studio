@@ -448,6 +448,8 @@ export interface PipelineDraft {
   updated_at: string | null;
   /** Reminder from the agent when the source's terms restrict automated collection (not a block). */
   licence_note?: string | null;
+  /** 'agent' = proposed by a designer run (kept only in the page, never on the server); else the chat draft. */
+  source?: 'agent' | 'chat';
 }
 export const getPipelineDraft = async (context?: string): Promise<PipelineDraft | null> => {
   try {

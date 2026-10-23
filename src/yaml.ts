@@ -739,7 +739,10 @@ export function parsePipelineFromYaml(yaml: string, ctx?: YamlContext): Pipeline
   // dialetto — niente righe, nomi stage ancora quotati, o args in linea (`args: ["…"]`) che
   // scarterebbe in silenzio — si passa al parse strutturato.
   const inlineArgs = /^[ \t]*args:[ \t]*(?!\[\][ \t]*(#.*)?$)[^\s#]/m.test(text);
-  if (rows.length && !inlineArgs && !rows.some((r) => /^["']/.test(r.stage))) return nameArgs(rows, ctx);
+  // Flow-style mappings in a list (`- - { selector: ".t", as: title }`, what the designer agent writes):
+  // the line parser drops them and the stage lands on the canvas with no fields (10-23, Farmaè).
+  const flowItems = /^[ \t]*-[ \t]+(?:-[ \t]+)?\{/m.test(text);
+  if (rows.length && !inlineArgs && !flowItems && !rows.some((r) => /^["']/.test(r.stage))) return nameArgs(rows, ctx);
   const structured = parseStructured(text, ctx);
   return structured.length ? structured : nameArgs(rows, ctx);
 }
