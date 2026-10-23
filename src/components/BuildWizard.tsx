@@ -752,6 +752,158 @@ export default function BuildWizard({
     }
   };
 
+  // One stage card: the list shows them in sequence, graph mode shows the selected one in the
+  // inspector next to the canvas (user 10-23: edit the node right there, not down in the list).
+  const renderStageCard = (row: PipelineRow, idx: number) => {
+      const spec = findSpec(row.stage);
+      const args = (spec?.arg_schema || []).map((a) => a.name);
+      const look = lookOf(row.stage, spec?.category);
+      const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold shadow-sm transition disabled:opacity-30 disabled:shadow-none';
+      return (
+        <li key={idx} className={`rounded-xl border border-slate-200 border-l-4 ${look.bar} p-3 bg-white shadow-sm`}>
+          <div className="flex items-center gap-3 mb-2.5">
+            <span aria-hidden="true"
+              className={`relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl leading-none ring-1 ${look.tile}`}>
+              {look.icon}
+              <span className="absolute -top-1.5 -left-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-800 px-1 text-[11px] font-semibold text-white">
+                {idx + 1}
+              </span>
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
+                {!embedded && rowRun?.[idx] && (/fail|error/i.test(rowRun[idx].status || '') || (rowRun[idx].fill != null && (rowRun[idx].fill as number) < 50)) && (
+                  <button type="button" onClick={() => fixStageWithAI(idx)} disabled={generating}
+                    className="text-xs font-semibold px-2 py-0.5 rounded-full border border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100 disabled:opacity-50">
+                    ✨ Fix with AI
+                  </button>
+                )}
+                {rowRun?.[idx] && (rowRun[idx].status || rowRun[idx].rows != null) && (() => {
+                  const rr = rowRun[idx];
+                  const bad = /fail|error/i.test(rr.status || '');
+                  return (
+                    <span title={rr.message || 'last dry run'}
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bad ? 'border-rose-300 bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
+                      {bad ? '✕ failed' : rr.rows != null ? `✓ ${rr.rows} rows · fields ${rr.fill}% filled` : '✓ ran'}
+                    </span>
+                  );
+                })()}
+                {multiSource && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {row._src === 'shared' ? 'shared' : `Source ${row._src || 1}`}
+                  </span>
+                )}
+              </div>
+              {look.blurb && <p className="text-sm text-slate-500 truncate">{look.blurb}</p>}
+            </div>
+            <span className="ml-auto flex shrink-0 gap-1">
+              <button onClick={() => moveStage(idx, -1)} disabled={idx === 0}
+                title="Move up" aria-label="Move up"
+                className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↑</button>
+              <button onClick={() => moveStage(idx, 1)} disabled={idx === pipeline.length - 1}
+                title="Move down" aria-label="Move down"
+                className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↓</button>
+              <button onClick={() => removeStage(idx)}
+                title="Remove stage" aria-label="Remove stage"
+                className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}>✕</button>
+            </span>
+          </div>
+          {['extract', 'flatSelect'].includes(row.stage) ? (
+            <>
+              {row.stage === 'flatSelect' && (
+                <div className="flex items-center gap-2 mb-1">
+                  <label className="text-sm text-slate-600 w-28 shrink-0">segment</label>
+                  <input
+                    value={row.args.segmentSelector ?? row.args.selector ?? ''}
+                    onChange={(e) => setArg(idx, 'segmentSelector', e.target.value)}
+                    placeholder="segment CSS selector"
+                    className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                  />
+                </div>
+              )}
+              <div className="flex items-center gap-2 mb-1">
+                <button
+                  onClick={() => setPickerFor(idx)}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-brand-600/30 bg-brand-600/5 text-brand-900 hover:bg-brand-600/10">
+                  <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
+                </button>
+                {(() => {
+                  const fr = pipeline[fetchRowIndexFor(idx)];
+                  return (
+                    <>
+                      {fr?._requires_hitl && (
+                        <span className="text-sm px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
+                          title={fr._anti_bot_kind || 'anti-bot'}>requires HITL</span>
+                      )}
+                      {fr?._trace?.length ? (
+                        <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                          {fr._trace.length} action{fr._trace.length > 1 ? 's' : ''}
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </div>
+              <FieldEditor row={row} onChange={(f) => setFields(idx, f)} sourceUrl={sourceUrlFor(idx)} />
+            </>
+          ) : args.length > 0 ? (
+            <div className="space-y-1">
+              {args.map((n) => (
+                <div key={n} className="flex items-center gap-2">
+                  <label className="text-sm text-slate-600 w-28 shrink-0">{n}</label>
+                  <input
+                    value={row.args[n] ?? ''}
+                    onChange={(e) => setArg(idx, n, e.target.value)}
+                    className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : row.stage === 'oddsSelect' || row.stage === 'odds_select' ? (
+            <>
+              <button
+                onClick={() => setPickerFor(idx)}
+                className="mb-1 inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick market box
+              </button>
+              <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">no args</p>
+          )}
+
+          {FETCH_STAGES.has(row.stage) && (
+            <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+              <button
+                onClick={() => setPickerFor(idx)}
+                title={urlOfRow(row) ? 'Open the page and record the steps' : 'This row needs a URL first'}
+                disabled={!urlOfRow(row)}
+                className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                <span className="text-lg leading-none" aria-hidden="true">🎬</span> Record actions
+              </button>
+              {row._trace?.length ? (
+                <>
+                  <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {row._trace.length} action{row._trace.length > 1 ? 's' : ''} recorded
+                  </span>
+                  <button
+                    onClick={() => setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _trace: undefined } : r)))}
+                    className="text-sm text-slate-500 hover:text-red-600">
+                    clear
+                  </button>
+                </>
+              ) : (
+                <span className="text-sm text-slate-500">
+                  cookies, searches, “load more”: the steps before the data
+                </span>
+              )}
+            </div>
+          )}
+        </li>
+      );
+  };
+
   // Colonne asimmetriche, non meta' e meta'. Il catalogo e' una lista di pastiglie e smette di
   // migliorare oltre una certa larghezza; la pipeline contiene i campi che si modificano e lo
   // YAML generato, che invece guadagna da ogni pixel. A meta' schermo il catalogo sprecava
@@ -1150,7 +1302,8 @@ export default function BuildWizard({
           </div>
         </div>
         {viewMode === 'graph' && (
-          <div className="mb-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
+           <div className="min-w-0">
             <PipelineGraph
               pipeline={pipeline}
               lookOf={(st) => lookOf(st, findSpec(st)?.category)}
@@ -1163,7 +1316,24 @@ export default function BuildWizard({
                 document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
             />
-            <p className="mt-2 text-sm text-slate-500">{graphSel == null ? 'Click a stage to edit it here · + adds a stage to that lane from the catalogue.' : `Editing stage ${graphSel + 1}.`}</p>
+            <p className="mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
+           </div>
+           {/* Inspector: the selected node's full form, right beside the canvas. */}
+           <aside className="xl:sticky xl:top-20 max-h-[560px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+             {graphSel != null && pipeline[graphSel] ? (
+               <div>
+                 <div className="mb-2 flex items-center px-1">
+                   <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
+                   <span className="flex-1" />
+                   <button type="button" onClick={() => setGraphSel(null)} title="Close"
+                     className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+                 </div>
+                 <ol>{renderStageCard(pipeline[graphSel], graphSel)}</ol>
+               </div>
+             ) : (
+               <p className="p-6 text-center text-sm text-slate-500">Select a node in the graph to see and edit its details here.</p>
+             )}
+           </aside>
           </div>
         )}
 
@@ -1217,156 +1387,7 @@ export default function BuildWizard({
         )}
 
         <ol className="space-y-3 mb-4">
-          {pipeline.map((row, idx) => {
-            if (viewMode === 'graph' && graphSel !== idx) return null;   // graph mode: only the selected stage
-            const spec = findSpec(row.stage);
-            const args = (spec?.arg_schema || []).map((a) => a.name);
-            const look = lookOf(row.stage, spec?.category);
-            const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold shadow-sm transition disabled:opacity-30 disabled:shadow-none';
-            return (
-              <li key={idx} className={`rounded-xl border border-slate-200 border-l-4 ${look.bar} p-3 bg-white shadow-sm`}>
-                <div className="flex items-center gap-3 mb-2.5">
-                  <span aria-hidden="true"
-                    className={`relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl leading-none ring-1 ${look.tile}`}>
-                    {look.icon}
-                    <span className="absolute -top-1.5 -left-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-800 px-1 text-[11px] font-semibold text-white">
-                      {idx + 1}
-                    </span>
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
-                      {!embedded && rowRun?.[idx] && (/fail|error/i.test(rowRun[idx].status || '') || (rowRun[idx].fill != null && (rowRun[idx].fill as number) < 50)) && (
-                        <button type="button" onClick={() => fixStageWithAI(idx)} disabled={generating}
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full border border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100 disabled:opacity-50">
-                          ✨ Fix with AI
-                        </button>
-                      )}
-                      {rowRun?.[idx] && (rowRun[idx].status || rowRun[idx].rows != null) && (() => {
-                        const rr = rowRun[idx];
-                        const bad = /fail|error/i.test(rr.status || '');
-                        return (
-                          <span title={rr.message || 'last dry run'}
-                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bad ? 'border-rose-300 bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
-                            {bad ? '✕ failed' : rr.rows != null ? `✓ ${rr.rows} rows · fields ${rr.fill}% filled` : '✓ ran'}
-                          </span>
-                        );
-                      })()}
-                      {multiSource && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                          {row._src === 'shared' ? 'shared' : `Source ${row._src || 1}`}
-                        </span>
-                      )}
-                    </div>
-                    {look.blurb && <p className="text-sm text-slate-500 truncate">{look.blurb}</p>}
-                  </div>
-                  <span className="ml-auto flex shrink-0 gap-1">
-                    <button onClick={() => moveStage(idx, -1)} disabled={idx === 0}
-                      title="Move up" aria-label="Move up"
-                      className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↑</button>
-                    <button onClick={() => moveStage(idx, 1)} disabled={idx === pipeline.length - 1}
-                      title="Move down" aria-label="Move down"
-                      className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↓</button>
-                    <button onClick={() => removeStage(idx)}
-                      title="Remove stage" aria-label="Remove stage"
-                      className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}>✕</button>
-                  </span>
-                </div>
-                {['extract', 'flatSelect'].includes(row.stage) ? (
-                  <>
-                    {row.stage === 'flatSelect' && (
-                      <div className="flex items-center gap-2 mb-1">
-                        <label className="text-sm text-slate-600 w-28 shrink-0">segment</label>
-                        <input
-                          value={row.args.segmentSelector ?? row.args.selector ?? ''}
-                          onChange={(e) => setArg(idx, 'segmentSelector', e.target.value)}
-                          placeholder="segment CSS selector"
-                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
-                        />
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 mb-1">
-                      <button
-                        onClick={() => setPickerFor(idx)}
-                        className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-brand-600/30 bg-brand-600/5 text-brand-900 hover:bg-brand-600/10">
-                        <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
-                      </button>
-                      {(() => {
-                        const fr = pipeline[fetchRowIndexFor(idx)];
-                        return (
-                          <>
-                            {fr?._requires_hitl && (
-                              <span className="text-sm px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
-                                title={fr._anti_bot_kind || 'anti-bot'}>requires HITL</span>
-                            )}
-                            {fr?._trace?.length ? (
-                              <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                {fr._trace.length} action{fr._trace.length > 1 ? 's' : ''}
-                              </span>
-                            ) : null}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <FieldEditor row={row} onChange={(f) => setFields(idx, f)} sourceUrl={sourceUrlFor(idx)} />
-                  </>
-                ) : args.length > 0 ? (
-                  <div className="space-y-1">
-                    {args.map((n) => (
-                      <div key={n} className="flex items-center gap-2">
-                        <label className="text-sm text-slate-600 w-28 shrink-0">{n}</label>
-                        <input
-                          value={row.args[n] ?? ''}
-                          onChange={(e) => setArg(idx, n, e.target.value)}
-                          className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : row.stage === 'oddsSelect' || row.stage === 'odds_select' ? (
-                  <>
-                    <button
-                      onClick={() => setPickerFor(idx)}
-                      className="mb-1 inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                      <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick market box
-                    </button>
-                    <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-400">no args</p>
-                )}
-
-                {FETCH_STAGES.has(row.stage) && (
-                  <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
-                    <button
-                      onClick={() => setPickerFor(idx)}
-                      title={urlOfRow(row) ? 'Open the page and record the steps' : 'This row needs a URL first'}
-                      disabled={!urlOfRow(row)}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-                      <span className="text-lg leading-none" aria-hidden="true">🎬</span> Record actions
-                    </button>
-                    {row._trace?.length ? (
-                      <>
-                        <span className="text-sm px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                          {row._trace.length} action{row._trace.length > 1 ? 's' : ''} recorded
-                        </span>
-                        <button
-                          onClick={() => setPipeline((prev) => prev.map((r, i) => (i === idx ? { ...r, _trace: undefined } : r)))}
-                          className="text-sm text-slate-500 hover:text-red-600">
-                          clear
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-sm text-slate-500">
-                        cookies, searches, “load more”: the steps before the data
-                      </span>
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
+          {viewMode === 'list' && pipeline.map((row, idx) => renderStageCard(row, idx))}
         </ol>
 
         <div className="grid grid-cols-2 gap-2 mb-3">
