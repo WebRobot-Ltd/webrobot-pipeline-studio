@@ -180,6 +180,13 @@ export default function BuildWizard({
   // Two definition modes over the SAME rows (10-23): the list, and the graph (lanes per source → shared tail).
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [graphSel, setGraphSel] = useState<number | null>(null);
+  const [graphFull, setGraphFull] = useState(false);
+  useEffect(() => {
+    if (!graphFull) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setGraphFull(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [graphFull]);
   // The designer agent's steps, LIVE while it works (redesign 10-23, after Kadoa), and the run to stop.
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [liveEid, setLiveEid] = useState<string | null>(null);
@@ -226,6 +233,14 @@ export default function BuildWizard({
     setPipeline((prev) =>
       [...prev, { stage: stageName, args: {}, _src: target } as PipelineRow]
         .sort((a, b) => srcKey(a) - srcKey(b)));
+  };
+
+  /** Move a stage to another lane (a source's branch or 'shared'); rows stay grouped by lane. */
+  const setLane = (idx: number, lane: TargetSource) => {
+    const order = pipeline.map((r, i) => ({ r: i === idx ? { ...r, _src: lane } : r, i }))
+      .sort((x, y) => srcKey(x.r) - srcKey(y.r) || x.i - y.i);
+    setPipeline(order.map((x) => x.r));
+    if (graphSel === idx) setGraphSel(order.findIndex((x) => x.i === idx));   // keep the moved node selected
   };
 
   const removeStage = (idx: number) => setPipeline((prev) => prev.filter((_, i) => i !== idx));
@@ -907,9 +922,15 @@ export default function BuildWizard({
                   );
                 })()}
                 {multiSource && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    {row._src === 'shared' ? 'shared' : `Source ${row._src || 1}`}
-                  </span>
+                  // Lane of the stage: one source's own branch, or SHARED = after the sources are merged
+                  // (e.g. a sentiment stage that must score the rows of every source together).
+                  <select value={row._src === 'shared' ? 'shared' : String(row._src || 1)}
+                    onChange={(e) => setLane(idx, e.target.value === 'shared' ? 'shared' : Number(e.target.value))}
+                    title="Which branch this stage belongs to — Shared runs once on the merged rows of all sources"
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full border ${row._src === 'shared' ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
+                    {Array.from({ length: maxSourceNum() }, (_, k) => k + 1).map((n) => <option key={n} value={n}>Source {n}</option>)}
+                    <option value="shared">Shared (after merge)</option>
+                  </select>
                 )}
               </div>
               {look.blurb && <p className="text-sm text-slate-500 truncate">{look.blurb}</p>}
@@ -1065,6 +1086,44 @@ export default function BuildWizard({
         </li>
       );
   };
+
+  // Graph area (canvas + node inspector): inline in the page, or full-screen for more room.
+  const renderGraphArea = (h: number | string, full: boolean) => (
+          <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
+           <div className="min-w-0">
+            <PipelineGraph
+              height={h}
+              pipeline={pipeline}
+              lookOf={(st) => lookOf(st, findSpec(st)?.category)}
+              run={rowRun}
+              selected={graphSel}
+              onSelect={(i) => setGraphSel(i === graphSel ? null : i)}
+              onRemove={(i) => { removeStage(i); setGraphSel(null); }}
+              onAddTo={(src) => {
+                setTarget(src as any);
+                document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            />
+            <p className="mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
+           </div>
+           {/* Inspector: the selected node's full form, right beside the canvas. */}
+           <aside className={(full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
+             {graphSel != null && pipeline[graphSel] ? (
+               <div>
+                 <div className="mb-2 flex items-center px-1">
+                   <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
+                   <span className="flex-1" />
+                   <button type="button" onClick={() => setGraphSel(null)} title="Close"
+                     className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+                 </div>
+                 <ol>{renderStageCard(pipeline[graphSel], graphSel)}</ol>
+               </div>
+             ) : (
+               <p className="p-6 text-center text-sm text-slate-500">Select a node in the graph to see and edit its details here.</p>
+             )}
+           </aside>
+          </div>
+  );
 
   // Colonne asimmetriche, non meta' e meta'. Il catalogo e' una lista di pastiglie e smette di
   // migliorare oltre una certa larghezza; la pipeline contiene i campi che si modificano e lo
@@ -1471,38 +1530,33 @@ export default function BuildWizard({
           </div>
         </div>
         {viewMode === 'graph' && (
-          <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
-           <div className="min-w-0">
-            <PipelineGraph
-              pipeline={pipeline}
-              lookOf={(st) => lookOf(st, findSpec(st)?.category)}
-              run={rowRun}
-              selected={graphSel}
-              onSelect={(i) => setGraphSel(i === graphSel ? null : i)}
-              onRemove={(i) => { removeStage(i); setGraphSel(null); }}
-              onAddTo={(src) => {
-                setTarget(src as any);
-                document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-            />
-            <p className="mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
-           </div>
-           {/* Inspector: the selected node's full form, right beside the canvas. */}
-           <aside className="xl:sticky xl:top-20 max-h-[560px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-             {graphSel != null && pipeline[graphSel] ? (
-               <div>
-                 <div className="mb-2 flex items-center px-1">
-                   <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
-                   <span className="flex-1" />
-                   <button type="button" onClick={() => setGraphSel(null)} title="Close"
-                     className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
-                 </div>
-                 <ol>{renderStageCard(pipeline[graphSel], graphSel)}</ol>
-               </div>
-             ) : (
-               <p className="p-6 text-center text-sm text-slate-500">Select a node in the graph to see and edit its details here.</p>
-             )}
-           </aside>
+          <div className="relative">
+            <button type="button" onClick={() => setGraphFull(true)} title="Open the graph full screen"
+              className="absolute right-2 top-2 z-10 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+              ⤢ Expand
+            </button>
+            {!graphFull && renderGraphArea(560, false)}
+          </div>
+        )}
+        {viewMode === 'graph' && graphFull && (
+          <div className="wr-graph-print fixed inset-0 z-50 flex flex-col bg-white p-4" role="dialog" aria-modal="true">
+            {/* Print / PDF: only this view goes to paper — the browser's "Save as PDF" makes the file. */}
+            <style>{`@media print {
+              @page { size: landscape; margin: 10mm; }
+              body * { visibility: hidden !important; }
+              .wr-graph-print, .wr-graph-print * { visibility: visible !important; }
+              .wr-graph-print { position: absolute !important; inset: 0 !important; }
+              .wr-graph-print .wr-noprint, .wr-graph-print .react-flow__controls, .wr-graph-print .react-flow__minimap { display: none !important; }
+            }`}</style>
+            <div className="mb-3 flex items-center gap-3">
+              <h3 className="text-base font-semibold text-slate-800">{label || 'Pipeline'} — graph</h3>
+              <span className="flex-1" />
+              <button type="button" onClick={() => window.print()} title="Print the graph, or save it as PDF from the print dialog"
+                className="wr-noprint rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">🖨 Print / PDF</button>
+              <button type="button" onClick={() => setGraphFull(false)} title="Close (Esc)"
+                className="wr-noprint rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">✕ Close</button>
+            </div>
+            <div className="min-h-0 flex-1">{renderGraphArea('calc(100vh - 120px)', true)}</div>
           </div>
         )}
 

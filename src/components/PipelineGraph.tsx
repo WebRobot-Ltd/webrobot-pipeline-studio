@@ -18,7 +18,7 @@ const COL = 270;   // horizontal step between stages
 const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
-  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo,
+  pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560,
 }: {
   pipeline: PipelineRow[];
   lookOf: (stage: string) => GraphLook;
@@ -27,6 +27,8 @@ export default function PipelineGraph({
   onSelect: (idx: number) => void;
   onRemove: (idx: number) => void;
   onAddTo: (src: number | 'shared') => void;
+  /** canvas height in px, or a CSS length (the expanded view passes a viewport height) */
+  height?: number | string;
 }) {
   // positions the person dragged, by node id (kept while the page is open; the YAML has no layout)
   const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
@@ -167,7 +169,7 @@ export default function PipelineGraph({
   }
 
   return (
-    <div style={{ height: 560 }} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+    <div style={{ height }} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
       <ReactFlow
         nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         minZoom={0.2} maxZoom={1.6} proOptions={{ hideAttribution: true }}
