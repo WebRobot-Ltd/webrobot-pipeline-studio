@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { PipelineRow } from '../yaml';
+import { friendlyName } from '../stageIdentity';
 
 export interface GraphLook { icon: string; tile: string; label: string }
 export interface GraphRun { status: string | null; fill: number | null; rows: number | null }
@@ -73,8 +74,8 @@ export default function PipelineGraph({
               <div className="flex items-center gap-2">
                 <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl ring-1 ${look.tile}`}>{look.icon}</span>
                 <span className="min-w-0">
-                  <span className="block truncate font-mono text-sm font-semibold text-slate-900">{idx + 1}. {row.stage}</span>
-                  <span className="block truncate text-xs text-slate-500">{look.label}</span>
+                  <span className="block truncate text-sm font-semibold text-slate-900">{idx + 1}. {friendlyName(row.stage)}</span>
+                  <span className="block truncate text-xs text-slate-500"><span className="font-mono">{row.stage}</span> · {look.label}</span>
                 </span>
                 <button type="button" title="Remove stage"
                   onClick={(e) => { e.stopPropagation(); onRemove(idx); }}
@@ -220,7 +221,7 @@ export default function PipelineGraph({
         return (
           <div className="absolute z-20 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
             style={{ left: menu.x, top: menu.y }} onContextMenu={(e) => e.preventDefault()}>
-            <div className="truncate border-b border-slate-100 px-3 pb-1.5 pt-1 font-mono text-xs font-semibold text-slate-500">{i + 1}. {row.stage}</div>
+            <div className="truncate border-b border-slate-100 px-3 pb-1.5 pt-1 text-xs font-semibold text-slate-500">{i + 1}. {friendlyName(row.stage)}</div>
             <button type="button" className={item} onClick={run(() => onSelect(i))}>✎ Edit</button>
             {actions && actions.sources > 1 && (<>
               <div className="mt-1 border-t border-slate-100 px-3 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Branch</div>

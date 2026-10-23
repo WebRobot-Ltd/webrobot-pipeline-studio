@@ -147,3 +147,42 @@ export function sequenceAdvice(
   else if (!covered.has(4)) missing = 'The result is never saved anywhere: add a destination.';
   return { covered, missing };
 }
+
+/**
+ * Human name of a stage (user 10-23: "load_csv is very technical"). The technical name stays visible
+ * next to it — it is what the YAML says — but the first thing read is what the stage DOES.
+ * Hand-written for the common stages; any other one (plugins included) is derived from its name, so a
+ * new stage still reads as words instead of an identifier.
+ */
+const FRIENDLY: Record<string, string> = {
+  fetch: 'Open a web page', wget: 'Open a web page', visit: 'Open a web page in a browser',
+  resilientFetch: 'Open a web page (browser if needed)', fetch_resilient: 'Open a web page (browser if needed)',
+  resilientJoin: "Open each item's page", wgetJoin: "Open each item's page", visitJoin: "Open each item's page in a browser",
+  join: "Open each item's page", intelligentJoin: "Find and open each item's page", intelligentWgetJoin: "Find and open each item's page",
+  wgetExplore: 'Follow the next pages', visitExplore: 'Follow the next pages in a browser', resilientExplore: 'Follow the next pages',
+  explore: 'Follow the next pages', intelligentExplore: 'Find and follow the next pages', intelligentWgetExplore: 'Find and follow the next pages',
+  flatSelect: 'Extract the items of a list', extract: 'Extract fields from the page', iextract: 'Extract fields by description',
+  oddsSelect: 'Extract betting odds', odds_select: 'Extract betting odds',
+  load_csv: 'Load a CSV file', load_json: 'Load a JSON file', load_parquet: 'Load a Parquet file', load_excel: 'Load an Excel file',
+  load_sitemap: 'Read a sitemap', load_rss: 'Read an RSS feed', rss: 'Read an RSS feed',
+  save_csv: 'Save as CSV', save_json: 'Save as JSON', save_parquet: 'Save as Parquet',
+  sql_query: 'Transform with SQL', dedup: 'Remove duplicates', filter: 'Keep only matching rows', union: 'Merge the rows',
+  sentiment: 'Score the sentiment', sentimentAnalysis: 'Score the sentiment', summarize: 'Summarise the text',
+  translate: 'Translate the text', classify: 'Classify the rows', embed: 'Compute embeddings',
+  rag_index: 'Add to the knowledge base', httpSource: 'Call a web API',
+  socialAPI: 'Read a social / financial API', eurostatAPI: 'Eurostat statistics', istatAPI: 'ISTAT statistics',
+};
+const ACRONYMS = new Set(['csv', 'json', 'xml', 'sql', 'api', 'url', 'rss', 'pdf', 'html', 'llm', 'ai', 'ocr', 'eu', 'it', 'ean', 'id', 'rag', 'http']);
+export function friendlyName(stage: string): string {
+  if (!stage) return '';
+  if (FRIENDLY[stage]) return FRIENDLY[stage];
+  const py = /^python_[a-z_]+:(.+)$/.exec(stage);
+  if (py) return `Python: ${friendlyName(py[1])}`;
+  const words = stage
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_\-:.]+/g, ' ')
+    .trim().split(/\s+/).map((w) => w.toLowerCase());
+  if (!words.length) return stage;
+  const out = words.map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : w));
+  out[0] = out[0].charAt(0).toUpperCase() + out[0].slice(1);
+  return out.join(' ');
+}

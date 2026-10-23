@@ -65,7 +65,7 @@ import SelectorPicker, {
   type PickerMode,
 } from './SelectorPicker';
 
-import { lookOf, PHASES, sequenceAdvice } from '../stageIdentity';
+import { lookOf, PHASES, sequenceAdvice, friendlyName } from '../stageIdentity';
 interface CatalogStage extends StageSpec {
   category?: string;
   description?: string;
@@ -432,7 +432,7 @@ export default function BuildWizard({
   const groupedCatalog = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const matched = catalog.filter(
-      (s) => !q || s.stage_name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
+      (s) => !q || s.stage_name.toLowerCase().includes(q) || friendlyName(s.stage_name).toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
     const byCat = new Map<string, CatalogStage[]>();
     for (const s of matched) {
       const c = s.category || 'other';
@@ -903,7 +903,8 @@ export default function BuildWizard({
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
+                <span className="text-base font-semibold text-slate-900">{friendlyName(row.stage)}</span>
+                <span className="font-mono text-xs text-slate-500" title="Technical name (as in the YAML)">{row.stage}</span>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
                 {!embedded && rowRun?.[idx] && (/fail|error/i.test(rowRun[idx].status || '') || (rowRun[idx].fill != null && (rowRun[idx].fill as number) < 50)) && (
                   <button type="button" onClick={() => fixStageWithAI(idx)} disabled={generating}
@@ -1505,7 +1506,9 @@ export default function BuildWizard({
                       {look.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-sm font-semibold text-slate-800">{s.stage_name}</span>
+                      <span className="block truncate text-sm font-semibold text-slate-800">
+                        {friendlyName(s.stage_name)} <span className="font-mono text-xs font-normal text-slate-400">{s.stage_name}</span>
+                      </span>
                       <span className="block truncate text-xs text-slate-500">{s.description || look.blurb || look.label}</span>
                     </span>
                     <span className="shrink-0 rounded-md bg-brand-900 px-2 py-1 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
