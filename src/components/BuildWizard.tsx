@@ -189,7 +189,9 @@ export default function BuildWizard({
   const [graphFull, setGraphFull] = useState(false);
   // How the sources are combined at the merge point (multi-source): union by default (engine-side).
   const [combine, setCombine] = useState<CombineSpec | null>(null);
-  const [mergeSel, setMergeSel] = useState(false);   // graph: the merge node is selected → combine form
+  const [mergeSel, setMergeSel] = useState(false);
+  // node positions dragged in the graph: shared by the inline and the full-screen canvas (kept while the page is open)
+  const [graphPos, setGraphPos] = useState<Record<string, { x: number; y: number }>>({});   // graph: the merge node is selected → combine form
   const [paletteOpen, setPaletteOpen] = useState(true);   // full-screen graph: stage palette on the left, collapsible
   const [listLane, setListLane] = useState<number | 'shared' | 'all'>(1);   // list mode: which branch is shown
   useEffect(() => {
@@ -1196,7 +1198,7 @@ export default function BuildWizard({
     const add = (st: string) => addStage(st);
     if (!paletteOpen) {
       return (
-        <aside className="flex flex-col items-center rounded-xl border border-slate-200 bg-white py-2" style={{ height: 'calc(100vh - 120px)' }}>
+        <aside className="wr-noprint flex flex-col items-center rounded-xl border border-slate-200 bg-white py-2" style={{ height: 'calc(100vh - 120px)' }}>
           <button type="button" onClick={() => setPaletteOpen(true)} title="Show the stages to add"
             className="rounded-md px-1.5 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-100">»</button>
           <span className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Stages</span>
@@ -1204,7 +1206,7 @@ export default function BuildWizard({
       );
     }
     return (
-      <aside className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-2" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+      <aside className="wr-noprint flex max-h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-2" style={{ maxHeight: 'calc(100vh - 120px)' }}>
         <div className="mb-2 flex items-center">
           <span className="text-sm font-semibold text-slate-700">Stages</span>
           <span className="flex-1" />
@@ -1252,9 +1254,9 @@ export default function BuildWizard({
 
   // Graph area (canvas + node inspector): inline in the page, or full-screen for more room.
   const renderGraphArea = (h: number | string, full: boolean) => (
-          <div className={`mb-4 grid grid-cols-1 gap-3 items-start ${full ? (paletteOpen ? 'xl:grid-cols-[260px_minmax(0,1fr)_420px]' : 'xl:grid-cols-[40px_minmax(0,1fr)_420px]') : 'xl:grid-cols-[minmax(0,1fr)_440px]'}`}>
+          <div className={`wr-graph-grid mb-4 grid grid-cols-1 gap-3 items-start ${full ? (paletteOpen ? 'xl:grid-cols-[260px_minmax(0,1fr)_420px]' : 'xl:grid-cols-[40px_minmax(0,1fr)_420px]') : 'xl:grid-cols-[minmax(0,1fr)_440px]'}`}>
            {full && renderPalette()}
-           <div className="min-w-0">
+           <div className="wr-print-canvas min-w-0">
             <PipelineGraph
               height={h}
               pipeline={pipeline}
@@ -1263,6 +1265,8 @@ export default function BuildWizard({
               selected={graphSel}
               onSelect={(i) => { setMergeSel(false); setGraphSel(i === graphSel ? null : i); }}
               combineLabel={combineLabel(combine)}
+              positions={graphPos}
+              onPositions={setGraphPos}
               onMergeClick={() => { setGraphSel(null); setMergeSel(true); }}
               onRemove={(i) => { removeStage(i); setGraphSel(null); }}
               actions={{
@@ -1277,10 +1281,10 @@ export default function BuildWizard({
                 else document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
             />
-            <p className="mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
+            <p className="wr-noprint mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
            </div>
            {/* Inspector: the selected node's full form, right beside the canvas. */}
-           <aside className={(full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
+           <aside className={"wr-noprint " + (full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
              {mergeSel && multiSource ? renderCombineForm() : graphSel != null && pipeline[graphSel] ? (
                <div>
                  <div className="mb-2 flex items-center px-1">
@@ -1748,8 +1752,11 @@ export default function BuildWizard({
               .wr-graph-print, .wr-graph-print * { visibility: visible !important; }
               .wr-graph-print { position: absolute !important; inset: 0 !important; }
               .wr-graph-print .wr-noprint, .wr-graph-print .react-flow__controls, .wr-graph-print .react-flow__minimap { display: none !important; }
+              /* PDF = the canvas only: palette, inspector, title and hints are left out, the canvas fills the page */
+              .wr-graph-print .wr-graph-grid { display: block !important; }
+              .wr-graph-print .wr-print-canvas, .wr-graph-print .wr-print-canvas > div { height: 180mm !important; width: 100% !important; border: none !important; }
             }`}</style>
-            <div className="mb-3 flex items-center gap-3">
+            <div className="wr-noprint mb-3 flex items-center gap-3">
               <h3 className="text-base font-semibold text-slate-800">{label || 'Pipeline'} — graph</h3>
               <span className="flex-1" />
               <button type="button" onClick={() => window.print()} title="Print the graph, or save it as PDF from the print dialog"

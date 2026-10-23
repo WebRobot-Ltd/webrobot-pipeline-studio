@@ -20,6 +20,7 @@ const ROW = 170;   // vertical step between lanes
 
 export default function PipelineGraph({
   pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions, combineLabel, onMergeClick,
+  positions, onPositions,
 }: {
   pipeline: PipelineRow[];
   lookOf: (stage: string) => GraphLook;
@@ -30,6 +31,9 @@ export default function PipelineGraph({
   onAddTo: (src: number | 'shared') => void;
   /** canvas height in px, or a CSS length (the expanded view passes a viewport height) */
   height?: number | string;
+  /** dragged node positions, owned by the host so they survive the inline ⇄ full-screen switch */
+  positions?: Record<string, { x: number; y: number }>;
+  onPositions?: (update: (prev: Record<string, { x: number; y: number }>) => Record<string, { x: number; y: number }>) => void;
   /** what the merge node shows (default 'union · automatic') and its click (→ combine form) */
   combineLabel?: string;
   onMergeClick?: () => void;
@@ -44,7 +48,11 @@ export default function PipelineGraph({
   // right-click menu: which stage, where (px inside the canvas box)
   const [menu, setMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   // positions the person dragged, by node id (kept while the page is open; the YAML has no layout)
-  const [moved, setMoved] = useState<Record<string, { x: number; y: number }>>({});
+  const [ownMoved, setOwnMoved] = useState<Record<string, { x: number; y: number }>>({});
+  const moved = positions ?? ownMoved;
+  const setMoved = (f: (m: Record<string, { x: number; y: number }>) => Record<string, { x: number; y: number }>) => {
+    if (onPositions) onPositions(f); else setOwnMoved(f);   // functional: several drag events in one batch all apply
+  };
 
   const { nodes, edges } = useMemo(() => {
     const lanes = new Map<number, number[]>();
@@ -230,7 +238,7 @@ export default function PipelineGraph({
         const item = 'block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent';
         const run = (f: () => void) => () => { setMenu(null); f(); };
         return (
-          <div className="absolute z-20 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          <div className="wr-noprint absolute z-20 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
             style={{ left: menu.x, top: menu.y }} onContextMenu={(e) => e.preventDefault()}>
             <div className="truncate border-b border-slate-100 px-3 pb-1.5 pt-1 text-xs font-semibold text-slate-500">{i + 1}. {friendlyName(row.stage)}</div>
             <button type="button" className={item} onClick={run(() => onSelect(i))}>✎ Edit</button>
