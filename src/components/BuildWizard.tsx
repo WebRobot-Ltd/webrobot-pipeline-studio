@@ -181,6 +181,7 @@ export default function BuildWizard({
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [graphSel, setGraphSel] = useState<number | null>(null);
   const [graphFull, setGraphFull] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(true);   // full-screen graph: stage palette on the left, collapsible
   const [listLane, setListLane] = useState<number | 'shared' | 'all'>(1);   // list mode: which branch is shown
   useEffect(() => {
     if (!graphFull) return;
@@ -1107,9 +1108,75 @@ export default function BuildWizard({
       );
   };
 
+  // Stage palette for the full-screen graph: the catalogue is hidden behind the modal, so the stages to
+  // add are listed right beside the canvas (user 10-23). Same filter and same "Add to" as the catalogue.
+  const renderPalette = () => {
+    const laneOpts: TargetSource[] = [...Array.from({ length: maxSourceNum() }, (_, k) => k + 1), 'shared'];
+    const gens = [
+      { stage: 'fetch', icon: '📥', title: 'Load data' },
+      { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: '💾', title: 'Save data' },
+    ];
+    const add = (st: string) => addStage(st);
+    if (!paletteOpen) {
+      return (
+        <aside className="flex flex-col items-center rounded-xl border border-slate-200 bg-white py-2" style={{ height: 'calc(100vh - 120px)' }}>
+          <button type="button" onClick={() => setPaletteOpen(true)} title="Show the stages to add"
+            className="rounded-md px-1.5 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-100">»</button>
+          <span className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Stages</span>
+        </aside>
+      );
+    }
+    return (
+      <aside className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-2" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+        <div className="mb-2 flex items-center">
+          <span className="text-sm font-semibold text-slate-700">Stages</span>
+          <span className="flex-1" />
+          <button type="button" onClick={() => setPaletteOpen(false)} title="Hide the palette"
+            className="rounded-md px-1.5 py-0.5 text-sm font-semibold text-slate-500 hover:bg-slate-100">«</button>
+        </div>
+        <input id="wr-palette-search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search stages…"
+          className="mb-2 w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-600" />
+        <label className="mb-2 flex items-center gap-2 text-xs text-slate-600">
+          Add to
+          <select value={String(target)} onChange={(e) => setTarget(e.target.value === 'shared' ? 'shared' : Number(e.target.value))}
+            className="flex-1 rounded border border-slate-300 px-1.5 py-1 text-xs">
+            {laneOpts.map((l) => <option key={String(l)} value={String(l)}>{l === 'shared' ? 'Shared (after merge)' : `Source ${l}`}</option>)}
+            <option value={String(maxSourceNum() + 1)}>+ New source {maxSourceNum() + 1}</option>
+          </select>
+        </label>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+          <div>
+            {gens.map((g) => (
+              <button key={g.title} type="button" onClick={() => add(g.stage)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-slate-100">
+                <span aria-hidden="true">{g.icon}</span><span className="truncate font-medium text-slate-800">{g.title}</span>
+              </button>
+            ))}
+          </div>
+          {groupedCatalog.map(([cat, stages]) => (
+            <div key={cat}>
+              <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{cat}</p>
+              {stages.map((st) => {
+                const lk = lookOf(st.stage_name, st.category);
+                return (
+                  <button key={st.stage_name} type="button" onClick={() => add(st.stage_name)} title={st.description || lk.blurb}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-slate-100">
+                    <span aria-hidden="true">{lk.icon}</span>
+                    <span className="min-w-0 truncate text-slate-800">{friendlyName(st.stage_name)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </aside>
+    );
+  };
+
   // Graph area (canvas + node inspector): inline in the page, or full-screen for more room.
   const renderGraphArea = (h: number | string, full: boolean) => (
-          <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_440px] items-start">
+          <div className={`mb-4 grid grid-cols-1 gap-3 items-start ${full ? (paletteOpen ? 'xl:grid-cols-[260px_minmax(0,1fr)_420px]' : 'xl:grid-cols-[40px_minmax(0,1fr)_420px]') : 'xl:grid-cols-[minmax(0,1fr)_440px]'}`}>
+           {full && renderPalette()}
            <div className="min-w-0">
             <PipelineGraph
               height={h}
@@ -1127,7 +1194,8 @@ export default function BuildWizard({
               }}
               onAddTo={(src) => {
                 setTarget(src as any);
-                document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (full) { setPaletteOpen(true); setTimeout(() => document.getElementById('wr-palette-search')?.focus(), 0); }   // the palette is right there
+                else document.getElementById('wr-stage-catalogue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
             />
             <p className="mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
