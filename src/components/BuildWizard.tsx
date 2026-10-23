@@ -266,42 +266,74 @@ export default function BuildWizard({
     selector: f.selector, as: f.as, method: f.method, _parallel: f._parallel,
   });
   // ── URL helper from the source catalogue ─────────────────────────────────────
-  // Typing a URL in a fetch row suggests the catalogue's sites; picking one fills the row with the
-  // recipe the auto-setup validated (extraction segment + fields), ready to be checked visually
-  // with 🎯 Pick visually or a dry run — instead of inducing selectors from scratch.
+  // Typing a URL in a fetch row suggests the catalogue's sites; picking one builds the rest of the
+  // lane from the recipe the auto-setup validated — the person then checks and edits every stage
+  // (🎯 Pick visually, dry run) instead of inducing selectors from scratch:
+  //   detail fields in the recipe → fetch → wgetJoin/visitJoin(detail link) → extract(detail fields)
+  //   otherwise                   → fetch → flatSelect(segment, listing fields)
+  // Following links is a JOIN, never flatSelect + wget($col) (ETL rule 10-06).
   const [catalogSites, setCatalogSites] = useState<CatalogSite[] | null>(null);
   const [recipeNote, setRecipeNote] = useState<Record<number, string>>({});
+  const [recipeSearch, setRecipeSearch] = useState<Record<number, { template: string; q: string }>>({});
   const loadCatalogSites = () => {
     if (catalogSites) return;
     setCatalogSites([]);
     listCatalogSites().then(setCatalogSites).catch(() => setCatalogSites([]));
   };
+  const toPF = (fs?: { selector: string; as?: string; method?: string }[]): PipelineField[] =>
+    (fs || []).filter((f) => f?.selector).map((f) => ({ selector: f.selector, as: f.as, method: f.method || 'text' }));
   const applyCatalogSite = async (idx: number, site: CatalogSite) => {
     const full = await getCatalogRecipe(site.domain).catch(() => null);
     const sel = full?.selectors;
     const fetchRow = pipeline[idx];
+    const browser = full?.fetch_method === 'browser';
     const notes: string[] = [];
     if (full?.legal_status === 'licence') notes.push('⚠ Its terms restrict automated collection: you need a licence to use this data.');
-    if (full?.fetch_method === 'browser' && fetchRow?.stage !== 'visit') notes.push('The catalogue fetches this site with a browser: consider a visit stage.');
-    if (!sel?.segment && !sel?.fields?.length) {
+    if (browser && fetchRow?.stage !== 'visit') notes.push('The catalogue fetches this site with a browser: consider switching this row to visit.');
+    const tpl = sel?.search?.url_template;
+    setRecipeSearch((m) => {
+      const n = { ...m };
+      if (tpl && tpl.includes('{q}')) n[idx] = { template: tpl, q: '' }; else delete n[idx];
+      return n;
+    });
+    if (!sel?.segment && !sel?.fields?.length && !sel?.detail_fields?.length) {
       setRecipeNote((m) => ({ ...m, [idx]: ['No extraction recipe in the catalogue for this site yet — pick the fields visually.', ...notes].join(' ') }));
       return;
     }
-    const fields: PipelineField[] = (sel.fields || []).map((f) => ({ selector: f.selector, as: f.as, method: f.method || 'text' }));
+    const listing = toPF(sel.fields);
+    const detail = toPF(sel.detail_fields);
+    const link = sel.detail_link?.selector;
+    const useDetail = detail.length > 0 && !!link;
+    const joinStage = browser ? 'visitJoin' : 'wgetJoin';
     setPipeline((prev) => {
       const src = prev[idx]?._src;
-      // the extraction row this URL feeds: the next flatSelect in the same lane, else a new one
-      let j = prev.findIndex((r, i) => i > idx && r.stage === 'flatSelect' && r._src === src);
       const next = [...prev];
-      if (j < 0) {
-        next.splice(idx + 1, 0, { stage: 'flatSelect', args: {}, _src: src } as PipelineRow);
-        j = idx + 1;
+      // reuse the row right after the cursor when it is already the wanted stage, else insert one
+      const ensureAt = (pos: number, stages: string[], make: PipelineRow): number => {
+        const r = next[pos];
+        if (r && r._src === src && stages.includes(r.stage)) return pos;
+        next.splice(pos, 0, make);
+        return pos;
+      };
+      if (useDetail) {
+        const linkSel = sel.segment && !link.startsWith('$') ? `${sel.segment} ${link}` : link;
+        const j = ensureAt(idx + 1, ['wgetJoin', 'visitJoin', 'resilientJoin'], { stage: joinStage, args: {}, _src: src } as PipelineRow);
+        next[j] = { ...next[j], args: { ...next[j].args, selector: linkSel, joinType: next[j].args.joinType || 'LeftOuter' } };
+        const k = ensureAt(j + 1, ['extract'], { stage: 'extract', args: {}, _src: src } as PipelineRow);
+        next[k] = { ...next[k], _fields: detail };
+      } else {
+        const j = ensureAt(idx + 1, ['flatSelect'], { stage: 'flatSelect', args: {}, _src: src } as PipelineRow);
+        next[j] = { ...next[j], args: { ...next[j].args, segmentSelector: sel.segment || next[j].args.segmentSelector || '' }, _fields: listing };
       }
-      next[j] = { ...next[j], args: { ...next[j].args, segmentSelector: sel.segment || next[j].args.segmentSelector || '' }, _fields: fields };
       return next;
     });
     const when = sel.validated_at ? ` (validated ${sel.validated_at})` : '';
-    setRecipeNote((m) => ({ ...m, [idx]: [`Recipe from the catalogue${when}: ${fields.length} field${fields.length === 1 ? '' : 's'} filled in — check them with 🎯 Pick visually or a dry run.`, ...notes].join(' ') }));
+    const what = useDetail
+      ? `follows each item's link with ${joinStage} and extracts ${detail.length} detail field${detail.length === 1 ? '' : 's'}`
+      : `extracts ${listing.length} field${listing.length === 1 ? '' : 's'} from each item of the list`;
+    const pag = sel.pagination && (sel.pagination.note || sel.pagination.selector)
+      ? ` Pagination: ${sel.pagination.note || sel.pagination.selector} — add the next pages' URLs if you need more than the first page.` : '';
+    setRecipeNote((m) => ({ ...m, [idx]: [`Recipe from the catalogue${when}: the pipeline now ${what}. Every stage stays editable — check them with 🎯 Pick visually or a dry run.${pag}`, ...notes].join(' ') }));
   };
 
   const pfToPickField = (f: PipelineField): PickField => ({
@@ -917,6 +949,20 @@ export default function BuildWizard({
               {recipeNote[idx] && (
                 <p className="mt-1 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900">{recipeNote[idx]}</p>
               )}
+              {recipeSearch[idx] && (() => {
+                const rs = recipeSearch[idx];
+                const urlName = args.find((n) => /url/i.test(n)) || 'url';
+                return (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-white px-3 py-2">
+                    <span className="text-sm text-slate-600">🔎 Start from the site's search:</span>
+                    <input value={rs.q} onChange={(e) => setRecipeSearch((m) => ({ ...m, [idx]: { ...rs, q: e.target.value } }))}
+                      placeholder="what to search, e.g. magnesio" className="flex-1 min-w-[160px] rounded border border-slate-300 px-2 py-1 text-sm" />
+                    <button type="button" disabled={!rs.q.trim()}
+                      onClick={() => setArg(idx, urlName, rs.template.replace('{q}', encodeURIComponent(rs.q.trim())))}
+                      className="rounded-md bg-brand-600 px-2.5 py-1 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">Use search URL</button>
+                  </div>
+                );
+              })()}
             </div>
           ) : row.stage === 'oddsSelect' || row.stage === 'odds_select' ? (
             <>

@@ -165,6 +165,9 @@ export interface CatalogSite {
     segment?: string;
     fields?: { selector: string; as?: string; method?: string }[];
     search?: { url_template?: string };
+    pagination?: { type?: string; note?: string; selector?: string } | null;
+    detail_link?: { selector?: string; method?: string; base?: string } | null;
+    detail_fields?: { selector: string; as?: string; method?: string }[];
     validated?: boolean;
     validated_at?: string;
     recipe_status?: string;
