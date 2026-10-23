@@ -24,15 +24,22 @@ const METHODS = ['text', 'html', 'attr:href', 'attr:src', 'attr:title'];
 export default function FieldEditor({
   row,
   onChange,
+  sourceUrl,
 }: {
   row: PipelineRow;
   onChange: (fields: PipelineField[]) => void;
+  /** The page this extraction reads (from the fetch stage before it): the default for inference. */
+  sourceUrl?: string;
 }) {
   const fields = row._fields || [];
   const isFlat = row.stage === 'flatSelect';
   const segment = String((row.args?.segmentSelector || row.args?.selector) || '');
 
-  const [inferUrl, setInferUrl] = useState('');
+  const [inferUrl, setInferUrl] = useState(sourceUrl || '');
+  // "Add a field by describing it" (redesign 10-23, after Browse AI Table Studio): the wizard finds the
+  // element for a plain-language description, relative to the segment for a flatSelect.
+  const [describe, setDescribe] = useState('');
+  const [adding, setAdding] = useState(false);
   const [inferring, setInferring] = useState(false);
   const [inferMsg, setInferMsg] = useState<string | null>(null);
   // Which field row (if any) is currently picking a selector via the visual picker.
@@ -69,8 +76,47 @@ export default function FieldEditor({
     }
   };
 
+  const slug = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'field';
+
+  const addDescribed = async () => {
+    const want = describe.trim();
+    const url = (inferUrl || sourceUrl || '').trim();
+    if (!want) return;
+    if (!url) { setInferMsg('This stage needs the page URL (from the fetch stage above) to find the field.'); return; }
+    setAdding(true); setInferMsg(null);
+    try {
+      const body: Record<string, unknown> = { url, intent: want, stage_name: row.stage };
+      if (isFlat && segment) body.container_selector = segment;
+      const j = await wizardInferFields(body);
+      const found = (j?.llm?.length ? j.llm : j?.algo) || [];
+      const f = found[0];
+      if (!f?.selector) { setInferMsg(`No element found for “${want}” — try other words, or pick it visually with 🎯.`); return; }
+      set([...fields, { selector: String(f.selector), as: slug(want), method: String(f.method || 'text') }]);
+      setDescribe('');
+      setInferMsg(`Added “${slug(want)}” → ${f.selector}. Validate to check the values.`);
+    } catch (e) {
+      setInferMsg(e instanceof TenantStudioError ? `infer → ${e.status}` : 'Could not find the field');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <div className="mt-1 space-y-2">
+      <div className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50/50 p-1.5">
+        <input
+          value={describe}
+          onChange={(e) => setDescribe(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addDescribed(); }}
+          placeholder="Add a field by describing it — e.g. “price before discount”"
+          className="flex-1 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+        />
+        <button onClick={addDescribed} disabled={adding || !describe.trim()}
+          className="rounded-md bg-brand-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-950 disabled:opacity-50">
+          {adding ? 'Finding…' : '+ Add'}
+        </button>
+      </div>
       <div className="flex items-center gap-1.5">
         <input
           value={inferUrl}
@@ -86,7 +132,7 @@ export default function FieldEditor({
           {inferring ? '…' : 'Infer fields'}
         </button>
       </div>
-      {inferMsg && <p className="text-xs text-slate-500">{inferMsg}</p>}
+      {inferMsg && <p className="text-sm text-slate-600">{inferMsg}</p>}
 
       {fields.length === 0 && (
         <p className="text-xs text-slate-400">No fields yet — add one or infer from a URL.</p>

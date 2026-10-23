@@ -500,6 +500,49 @@ export default function BuildWizard({
     await seguiRun(eid, prompt);
   }, [askText, draftContext, pipeline, yaml, useDraftCtx, seguiRun]);
 
+  // Per-row result of the last dry run (redesign 10-23, like Lakeflow's row-count badges): the steps are
+  // matched to the rows by stage name in order; the extraction rows get the rows and fill rate.
+  const rowRun = useMemo(() => {
+    if (!validateResult) return null;
+    const steps: any[] = Array.isArray(validateResult.steps) ? validateResult.steps : [];
+    const recs: any[] = Array.isArray(validateResult.records) ? validateResult.records : [];
+    const used = new Set<number>();
+    return pipeline.map((row) => {
+      const k = steps.findIndex((st, i) => !used.has(i) && String(st?.stage || '') === row.stage);
+      if (k >= 0) used.add(k);
+      const st = k >= 0 ? steps[k] : null;
+      let fill: number | null = null;
+      if (['flatSelect', 'extract'].includes(row.stage) && recs.length && Array.isArray(row._fields) && row._fields.length) {
+        const names = row._fields.map((f: any) => f.as).filter(Boolean);
+        const cells = recs.length * names.length;
+        const ok = recs.reduce((n, r) => n + names.filter((nm: string) => r?.[nm] != null && String(r[nm]).trim() !== '').length, 0);
+        fill = cells ? Math.round((100 * ok) / cells) : null;
+      }
+      return { status: st ? String(st.status || '') : null, message: st?.message ? String(st.message) : '', fill, rows: fill != null ? recs.length : null };
+    });
+  }, [validateResult, pipeline]);
+
+  // "Fix with AI" on a stage that failed in the dry run (redesign 10-23, after Lakeflow's Fix button): the
+  // agent gets the CURRENT pipeline and is asked to repair that stage only — the result comes back as the
+  // usual proposal with its diff.
+  const fixStageWithAI = useCallback(async (idx: number) => {
+    const row = pipeline[idx];
+    if (!row) return;
+    const why = rowRun?.[idx]?.message || validateResult?.error || 'it produced no rows';
+    const prompt = `Fix stage ${idx + 1} (${row.stage}) of this pipeline: in the dry run it failed — ${why}. `
+      + 'Keep every other stage as it is and change only what is needed to make this one work; validate again.';
+    setAskErr(null); setGenerating(true); setAskPhase(`Asking the agent to fix stage ${idx + 1}\u2026`);
+    let eid: string | undefined;
+    try { eid = (await startDesignerRun(prompt, yaml))?.executionId; }
+    catch (e) {
+      setAskErr(e instanceof TenantStudioError ? `agent \u2192 ${e.status}` : 'The agent could not be reached');
+      setGenerating(false); setAskPhase(null); return;
+    }
+    if (!eid) { setAskErr('The agent did not start.'); setGenerating(false); setAskPhase(null); return; }
+    salvaRun(draftContext, { executionId: eid, prompt, startedAt: Date.now() });
+    await seguiRun(eid, `fix stage ${idx + 1}`);
+  }, [pipeline, rowRun, validateResult, yaml, draftContext, seguiRun]);
+
   // \u2500\u2500 Wizard guidato "2 round" (canale A) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Attende un run fino all'esito e ne torna il result grezzo (o null, gestendo gia' l'errore).
   // Non salva/riprende come seguiRun: il guidato e' interattivo, l'utente e' qui.
@@ -670,28 +713,6 @@ export default function BuildWizard({
     // findSpec dipende dal catalogo: senza, il consiglio resterebbe fermo al primo caricamento.
     [pipeline, catalog],
   );
-
-  // Per-row result of the last dry run (redesign 10-23, like Lakeflow's row-count badges): the steps are
-  // matched to the rows by stage name in order; the extraction rows get the rows and fill rate.
-  const rowRun = useMemo(() => {
-    if (!validateResult) return null;
-    const steps: any[] = Array.isArray(validateResult.steps) ? validateResult.steps : [];
-    const recs: any[] = Array.isArray(validateResult.records) ? validateResult.records : [];
-    const used = new Set<number>();
-    return pipeline.map((row) => {
-      const k = steps.findIndex((st, i) => !used.has(i) && String(st?.stage || '') === row.stage);
-      if (k >= 0) used.add(k);
-      const st = k >= 0 ? steps[k] : null;
-      let fill: number | null = null;
-      if (['flatSelect', 'extract'].includes(row.stage) && recs.length && Array.isArray(row._fields) && row._fields.length) {
-        const names = row._fields.map((f: any) => f.as).filter(Boolean);
-        const cells = recs.length * names.length;
-        const ok = recs.reduce((n, r) => n + names.filter((nm: string) => r?.[nm] != null && String(r[nm]).trim() !== '').length, 0);
-        fill = cells ? Math.round((100 * ok) / cells) : null;
-      }
-      return { status: st ? String(st.status || '') : null, message: st?.message ? String(st.message) : '', fill, rows: fill != null ? recs.length : null };
-    });
-  }, [validateResult, pipeline]);
 
   const handleValidate = async () => {
     setBottomTab('data');
@@ -1183,6 +1204,12 @@ export default function BuildWizard({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-base font-mono font-semibold text-slate-900">{row.stage}</span>
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
+                      {!embedded && rowRun?.[idx] && (/fail|error/i.test(rowRun[idx].status || '') || (rowRun[idx].fill != null && (rowRun[idx].fill as number) < 50)) && (
+                        <button type="button" onClick={() => fixStageWithAI(idx)} disabled={generating}
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full border border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100 disabled:opacity-50">
+                          ✨ Fix with AI
+                        </button>
+                      )}
                       {rowRun?.[idx] && (rowRun[idx].status || rowRun[idx].rows != null) && (() => {
                         const rr = rowRun[idx];
                         const bad = /fail|error/i.test(rr.status || '');
@@ -1249,7 +1276,7 @@ export default function BuildWizard({
                         );
                       })()}
                     </div>
-                    <FieldEditor row={row} onChange={(f) => setFields(idx, f)} />
+                    <FieldEditor row={row} onChange={(f) => setFields(idx, f)} sourceUrl={sourceUrlFor(idx)} />
                   </>
                 ) : args.length > 0 ? (
                   <div className="space-y-1">
