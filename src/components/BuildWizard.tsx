@@ -146,6 +146,7 @@ export default function BuildWizard({
   label,
   organizations,
   draftContext = 'etl:pipeline-designer',
+  links,
 }: {
   chatSlot?: ReactNode;
   value?: string;
@@ -164,6 +165,15 @@ export default function BuildWizard({
    * pipeline proposta per Agent Studio comparirebbe qui come se riguardasse quella aperta.
    */
   draftContext?: string;
+  /**
+   * Where the host shows an agent, a job and the project creation (hrefs). Optional: without them the
+   * post-save panel says what happened but has no links. The package doesn't know the host's routes.
+   */
+  links?: {
+    agent?: (agentId: string | number) => string;
+    job?: (jobId: string | number, projectId?: string | number) => string;
+    newProject?: (agentId: string | number) => string;
+  };
 } = {}) {
   const controlled = value !== undefined && typeof onChange === 'function';
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
@@ -182,6 +192,12 @@ export default function BuildWizard({
 
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // Outcome of the last save / run, shown as a panel with links (user 10-25: "no feedback that the
+  // Spark job started", "after saving, take me to the agent").
+  const [saved, setSaved] = useState<{
+    agentId: string; agentName: string;
+    run?: { executionId?: string; jobId?: string; projectId?: string; error?: string };
+  } | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
   const [bottomTab, setBottomTab] = useState<'data' | 'yaml' | 'steps'>('data');
@@ -892,20 +908,78 @@ export default function BuildWizard({
     setSaving(true);
     setSaveMsg(null);
     try {
-      const res = await saveGeneratedPipeline({
+      const res: any = await saveGeneratedPipeline({
         ...(saveTarget ? { agent_id: Number(saveTarget) } : { pipeline_name: pipelineName.trim() }),
         pipeline_yaml: yaml,
         execute,
         // Omesso quando non scelto: il server ricade sull'organizzazione del chiamante.
         ...(orgId ? { organization_id: orgId } : {}),
       });
-      const target = saveTarget ? (agentsList.find((a) => a.id === saveTarget)?.name || `agent ${saveTarget}`) : pipelineName;
-      setSaveMsg(`Saved to “${target}”${execute && res?.execution?.execution_id ? ` · run ${res.execution.execution_id}` : ''}.`);
+      const agentId = String(res?.agent_id ?? saveTarget ?? '');
+      const agentName = saveTarget ? (agentsList.find((a) => a.id === saveTarget)?.name || `agent ${saveTarget}`) : pipelineName.trim();
+      // From now on this page edits THAT agent: the next Save updates it instead of creating another one.
+      if (agentId && !saveTarget) {
+        setAgentsList((l) => (l.some((a) => a.id === agentId) ? l : [...l, { id: agentId, name: agentName }]));
+        setSaveTarget(agentId);
+      }
+      const ex = res?.execution;
+      setSaved({
+        agentId, agentName,
+        run: execute ? {
+          executionId: ex?.execution_id || ex?.executionId || ex?.id,
+          jobId: res?.job_id != null ? String(res.job_id) : undefined,
+          projectId: res?.project_id != null ? String(res.project_id) : undefined,
+          error: res?.execution_error,
+        } : undefined,
+      });
     } catch (e) {
-      setSaveMsg(e instanceof TenantStudioError ? `save → ${e.status}` : 'Save failed');
+      setSaveMsg(e instanceof TenantStudioError
+        ? (e.status === 402 ? 'Not run: the plan has no credit left for this run.' : e.status === 403 ? 'Not run: this organization cannot start jobs here.' : `Save failed (${e.status})`)
+        : 'Save failed');
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Post-save panel: what was saved, the run (if any), and the next steps with links. */
+  const renderSavedPanel = () => {
+    if (!saved) return null;
+    const a = links?.agent && saved.agentId ? links.agent(saved.agentId) : null;
+    const r = saved.run;
+    const jobHref = r?.jobId && links?.job ? links.job(r.jobId, r.projectId) : null;
+    const projHref = links?.newProject && saved.agentId ? links.newProject(saved.agentId) : null;
+    const btn = 'inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-semibold';
+    return (
+      <div className="mt-3 space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-slate-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-emerald-800">✓ Saved to agent “{saved.agentName}”</span>
+          {a && <a href={a} className={`${btn} border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100`}>Open the agent →</a>}
+          <span className="flex-1" />
+          <button type="button" onClick={() => setSaved(null)} className="text-slate-400 hover:text-slate-700" title="Close">✕</button>
+        </div>
+        <p className="text-slate-600">This page now edits this agent: the next Save updates it. Category, description and execution mode are set on the agent page.</p>
+        {r ? (
+          r.error ? (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-rose-800">⚠ Saved, but the run did not start: {r.error}</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2">
+              <span>▶ <b>Spark job submitted</b>{r.executionId ? <> · run <code>{r.executionId}</code></> : null} — it takes a few minutes; the data appears in the job's results.</span>
+              {jobHref && <a href={jobHref} className={`${btn} border-brand-300 bg-brand-50 text-brand-900 hover:bg-brand-100`}>Follow the run →</a>}
+            </div>
+          )
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => handleSave(true)} disabled={saving}
+              className={`${btn} border-brand-900 bg-brand-900 text-white hover:bg-brand-950 disabled:opacity-50`}>▶ Run now</button>
+            <span className="text-slate-600">starts a Spark job with this pipeline (a few minutes, uses credits).</span>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-2">
+          <span className="text-slate-700">Next: <b>create a project</b> for this agent and attach its input data, to schedule and repeat the runs.</span>
+          {projHref && <a href={projHref} className={`${btn} border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}>Create a project →</a>}
+        </div>
+      </div>
+    );
   };
 
   // One stage card: the list shows them in sequence, graph mode shows the selected one in the
@@ -1642,17 +1716,16 @@ export default function BuildWizard({
               ✓ Validate
             </button>
             <div className="flex gap-2">
+              {/* One Save (user 10-25: "Save & run" next to Save was confusing and gave no feedback).
+                  Running is offered AFTER saving, in the panel below, saying what it starts. */}
               <button onClick={() => handleSave(false)} disabled={saving || pipeline.length === 0}
-                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save draft'}
-              </button>
-              <button onClick={() => handleSave(true)} disabled={saving || pipeline.length === 0}
                 className="px-5 py-2 rounded-lg bg-brand-900 text-white text-sm font-semibold shadow-sm hover:bg-brand-950 disabled:opacity-50">
-                Save & run →
+                {saving ? 'Saving…' : saveTarget ? 'Save' : 'Save as new agent'}
               </button>
             </div>
           </div>
-          {saveMsg && <p className="mt-2 text-sm text-slate-700">{saveMsg}</p>}
+          {saveMsg && <p className="mt-2 text-sm text-rose-700">{saveMsg}</p>}
+          {renderSavedPanel()}
         </div>
       )}
 
