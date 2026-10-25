@@ -80,6 +80,7 @@ type TargetSource = number | 'shared';
 /** Stages that carry a source URL — used to seed the visual picker's mirror. */
 const FETCH_STAGES = new Set(['fetch', 'visit', 'wget']);
 const JOIN_STAGES = ['resilientJoin', 'wgetJoin', 'visitJoin', 'join'];
+const ENGINE_LABEL: Record<string, string> = { scrapy: 'Lite', hybrid: 'Hybrid', spark: 'Spark', analytics: 'Analytics' };
 // Branch / set-op primitives: how sources are put together is chosen on the merge node (combine:),
 // so they are not offered in the catalogue (still valid in a hand-written YAML).
 const SET_OP_STAGES = new Set(['union_with', 'union_branches', 'unionByName', 'union_by_name', 'intersectByName',
@@ -194,9 +195,12 @@ export default function BuildWizard({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   // Outcome of the last save / run, shown as a panel with links (user 10-25: "no feedback that the
   // Spark job started", "after saving, take me to the agent").
+  // Engine for "Run now": lite = Scrapy (HTTP only), hybrid = Scrapy + browser where needed, spark = cluster.
+  // In-cluster Spark is reserved to super_admin (or BYOC) on the server, so a tenant runs lite/hybrid.
+  const [runEngine, setRunEngine] = useState<'' | 'scrapy' | 'hybrid' | 'spark'>('');
   const [saved, setSaved] = useState<{
     agentId: string; agentName: string;
-    run?: { executionId?: string; jobId?: string; projectId?: string; error?: string };
+    run?: { executionId?: string; jobId?: string; projectId?: string; error?: string; engine?: string };
   } | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
   const [validateResult, setValidateResult] = useState<any>(null);
@@ -903,6 +907,11 @@ export default function BuildWizard({
     }
   };
 
+  /** Default engine for this pipeline: browser-capable stages or several sources → hybrid, else lite. */
+  const suggestedEngine = (): 'scrapy' | 'hybrid' =>
+    pipeline.some((r) => /^(visit|visitJoin|visitExplore|resilient|intelligent|fetch_browser)/i.test(r.stage)) || multiSource
+      ? 'hybrid' : 'scrapy';
+
   const handleSave = async (execute: boolean) => {
     if (!saveTarget && !pipelineName.trim()) { setSaveMsg('Name the new agent first.'); return; }
     setSaving(true);
@@ -912,6 +921,7 @@ export default function BuildWizard({
         ...(saveTarget ? { agent_id: Number(saveTarget) } : { pipeline_name: pipelineName.trim() }),
         pipeline_yaml: yaml,
         execute,
+        ...(execute ? { engine: runEngine || suggestedEngine() } : {}),
         // Omesso quando non scelto: il server ricade sull'organizzazione del chiamante.
         ...(orgId ? { organization_id: orgId } : {}),
       });
@@ -930,6 +940,7 @@ export default function BuildWizard({
           jobId: res?.job_id != null ? String(res.job_id) : undefined,
           projectId: res?.project_id != null ? String(res.project_id) : undefined,
           error: res?.execution_error,
+          engine: res?.engine || runEngine || suggestedEngine(),
         } : undefined,
       });
     } catch (e) {
@@ -963,7 +974,7 @@ export default function BuildWizard({
             <p className="rounded-lg bg-rose-50 px-3 py-2 text-rose-800">⚠ Saved, but the run did not start: {r.error}</p>
           ) : (
             <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2">
-              <span>▶ <b>Spark job submitted</b>{r.executionId ? <> · run <code>{r.executionId}</code></> : null} — it takes a few minutes; the data appears in the job's results.</span>
+              <span>▶ <b>{ENGINE_LABEL[r.engine || 'spark'] || r.engine} run submitted</b>{r.executionId ? <> · run <code>{r.executionId}</code></> : null} — the data appears in the job's results.</span>
               {jobHref && <a href={jobHref} className={`${btn} border-brand-300 bg-brand-50 text-brand-900 hover:bg-brand-100`}>Follow the run →</a>}
             </div>
           )
@@ -971,7 +982,15 @@ export default function BuildWizard({
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => handleSave(true)} disabled={saving}
               className={`${btn} border-brand-900 bg-brand-900 text-white hover:bg-brand-950 disabled:opacity-50`}>▶ Run now</button>
-            <span className="text-slate-600">starts a Spark job with this pipeline (a few minutes, uses credits).</span>
+            <label className="flex items-center gap-1.5 text-slate-700">on
+              <select value={runEngine || suggestedEngine()} onChange={(e) => setRunEngine(e.target.value as any)}
+                className="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
+                <option value="scrapy">Lite — HTTP only, fastest and cheapest</option>
+                <option value="hybrid">Hybrid — HTTP, browser where a page needs it</option>
+                <option value="spark">Spark — cluster (admins) or your BYOC</option>
+              </select>
+            </label>
+            <span className="text-slate-500">{(runEngine || suggestedEngine()) === 'spark' ? 'a few minutes to start; uses credits.' : 'starts in seconds; uses credits.'}</span>
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 border-t border-emerald-200 pt-2">
