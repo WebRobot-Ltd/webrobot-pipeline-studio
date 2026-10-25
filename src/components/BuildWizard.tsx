@@ -501,6 +501,11 @@ export default function BuildWizard({
   const [draftOpen, setDraftOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [askText, setAskText] = useState('');
+  // The designer answered NEEDS (a question) instead of a pipeline: show it with a box to reply, and
+  // re-run with the request + the answer (user 10-25: "there should be an interface to reply").
+  const [needs, setNeeds] = useState<{ question: string; prompt: string } | null>(null);
+  const [needsAnswer, setNeedsAnswer] = useState('');
+  const lastPrompt = useRef('');
   // The pipeline drafted on the canvas goes to the agent as context (current_yaml) ONLY with this flag,
   // shown next to Propose when there is a draft: on = the agent extends it, off = it starts from scratch.
   const [useDraftCtx, setUseDraftCtx] = useState(true);
@@ -616,11 +621,10 @@ export default function BuildWizard({
         // Un run riuscito senza pipeline utilizzabile NON e' un successo: succede quando l'agente
         // risponde "NEEDS: <domanda>" perche' la descrizione e' troppo vaga. Se c'e' la domanda,
         // la si MOSTRA: dice all'utente cosa chiarire, invece di un generico "descrivi meglio".
-        const needs = extractNeeds(result);
+        const needsQ = extractNeeds(result);
         const stopped = extractRunError(result);
-        setAskErr(needs
-          ? `The agent needs more detail: ${needs}`
-          : stopped
+        if (needsQ) { setNeeds({ question: needsQ, prompt: lastPrompt.current || askText }); setNeedsAnswer(''); return; }
+        setAskErr(stopped
             ? `The agent stopped before finishing (${stopped}) \u2014 try again, or describe the site and the fields more concretely.`
             : 'The agent finished without a pipeline \u2014 try describing the site and the fields more concretely.');
         return;
@@ -643,9 +647,11 @@ export default function BuildWizard({
     }
   }, [draftContext, followLogs]);
 
-  const askForPipeline = useCallback(async () => {
-    const prompt = askText.trim();
+  const askForPipeline = useCallback(async (override?: string) => {
+    const prompt = (typeof override === 'string' ? override : askText).trim();
     if (!prompt) return;
+    lastPrompt.current = prompt;
+    setNeeds(null);
     setAskErr(null);
     setGenerating(true);
     setAskPhase('Starting the designer agent\u2026');
@@ -787,10 +793,10 @@ export default function BuildWizard({
       if (result == null) return;
       const y = extractPipelineYaml(result);
       if (!y) {
-        const needs = extractNeeds(result);
+        const needsQ = extractNeeds(result);
         const stopped = extractRunError(result);
-        setAskErr(needs ? `The agent needs more detail: ${needs}`
-          : stopped ? `The agent stopped before finishing (${stopped}) \u2014 try again.`
+        if (needsQ) { setNeeds({ question: needsQ, prompt: `${guidedPrompt}\n\n${qa}` }); setNeedsAnswer(''); return; }
+        setAskErr(stopped ? `The agent stopped before finishing (${stopped}) \u2014 try again.`
           : 'The agent finished without a pipeline \u2014 try rephrasing your answers.');
         return;
       }
@@ -1495,7 +1501,7 @@ export default function BuildWizard({
                   </button>
                   <button
                     type="button"
-                    onClick={askForPipeline}
+                    onClick={() => askForPipeline()}
                     disabled={generating || !askText.trim()}
                     className="rounded-lg bg-brand-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-950 disabled:opacity-50"
                     title="Propose a pipeline from this description — you review it before anything changes"
@@ -1592,6 +1598,26 @@ export default function BuildWizard({
       )}
       {askPhase && !askErr && (
         <p className="lg:col-span-2 text-base text-slate-700">{askPhase}</p>
+      )}
+      {needs && (
+        <div className="lg:col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-base text-slate-800">
+          <p className="font-semibold text-amber-900">The designer needs one more detail</p>
+          <p className="mt-1 whitespace-pre-line">{needs.question}</p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <textarea className="min-h-[64px] flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-400"
+              placeholder="Your answer" value={needsAnswer} onChange={(e) => setNeedsAnswer(e.target.value)} />
+            <div className="flex shrink-0 gap-2 sm:flex-col">
+              <button type="button" disabled={generating || !needsAnswer.trim()}
+                onClick={() => {
+                  const next = `${needs.prompt}\n\nYou asked: ${needs.question}\nAnswer: ${needsAnswer.trim()}`;
+                  setAskText(next);
+                  askForPipeline(next);
+                }}
+                className="rounded-lg bg-brand-900 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-950 disabled:opacity-50">Send</button>
+              <button type="button" onClick={() => setNeeds(null)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Dismiss</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* AGENT STEPS, live (redesign 10-23, after Kadoa): what the designer agent is doing — the recipe it
