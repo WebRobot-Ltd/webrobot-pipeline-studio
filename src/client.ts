@@ -589,6 +589,13 @@ export const wizardInferSegment = (body: unknown) => call<any>('POST', '/wizard/
 export const wizardInferActions = (body: unknown) => call<any>('POST', '/wizard/infer-actions', { body });
 export const wizardInferVariables = (body: unknown) => call<any>('POST', '/wizard/infer-variables', { body });
 export const wizardApplyVariables = (body: unknown) => call<any>('POST', '/wizard/apply-variables', { body });
+/** Column names of a dataset (platform API). Empty when the dataset has no registered fields. */
+export const getDatasetColumns = (datasetId: string | number) =>
+  call<any>('GET', `/datasets/${encodeURIComponent(String(datasetId))}/fields`, { platform: true })
+    .then((r) => {
+      const rows = Array.isArray(r) ? r : (r?.data || r?.fields || []);
+      return (rows as any[]).map((f) => String(f?.name ?? f)).filter(Boolean);
+    });
 export const wizardRelaxSelectors = (body: unknown) => call<any>('POST', '/wizard/relax-selectors', { body });
 export const wizardConsolidateSelectors = (body: unknown) =>
   call<any>('POST', '/wizard/consolidate-selectors', { body });
