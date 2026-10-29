@@ -276,6 +276,9 @@ export default function SelectorPicker({
   useEffect(() => { restoreFieldsRef.current = restoreFields; }, [restoreFields]);
 
   // ── iframe postMessage helpers ─────────────────────────────────────────────
+  // targetOrigin stays '*': the mirror's origin is OPAQUE (CSP sandbox, no allow-same-origin),
+  // and an opaque origin cannot be named as a target. The recipient is pinned instead — always
+  // our own iframe's window — and the messages carry no credentials (modes, selectors, layers).
   const post = useCallback((msg: Record<string, unknown>) => {
     try {
       iframeRef.current?.contentWindow?.postMessage(msg, '*');
@@ -641,6 +644,12 @@ export default function SelectorPicker({
   // ── The postMessage bridge — faithful mirror of onPickerMessage ────────────
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
+      // Only the picker iframe may drive this component: same window as our <iframe>, and an
+      // origin that is either ours or opaque ("null" — the mirror is served with a CSP
+      // `sandbox` without allow-same-origin, so its origin is opaque by design).
+      const frameWin = iframeRef.current?.contentWindow;
+      if (!frameWin || ev.source !== frameWin) return;
+      if (ev.origin !== 'null' && ev.origin !== window.location.origin) return;
       const d = ev.data as Record<string, any>;
       if (!d || typeof d !== 'object') return;
 
@@ -1116,7 +1125,10 @@ export default function SelectorPicker({
               title="selector picker"
               onLoad={onPickerIframeLoad}
               className="h-full w-full"
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+              // No allow-same-origin: the mirrored page is third-party HTML served from the
+              // app's origin; with allow-same-origin + allow-scripts it could lift its own
+              // sandbox and act as the dashboard. picker.js only needs postMessage.
+              sandbox="allow-scripts allow-forms allow-popups"
             />
           )}
           {loading && loadedUrl && !error && (
