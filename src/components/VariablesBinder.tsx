@@ -4,6 +4,7 @@
 // values worth taking from the dataset (infer-variables), lets the person bind each to a column, rewrites
 // the YAML (templatize.ts) and saves it on the agent (apply-variables). Then every dataset row is one run.
 import { useEffect, useState } from 'react';
+import { CheckIcon, LinkIcon, XIcon } from '../icons';
 import { listPipelines, getDatasetColumns, wizardInferVariables, wizardApplyVariables, TenantStudioError } from '../client';
 import { templatizeYaml, detectUrlKeyword, type VariableCandidate, type VariableBinding } from '../templatize';
 
@@ -80,16 +81,16 @@ export default function VariablesBinder({ agentId, datasetId, onApplied }: {
     return (
       <button type="button" onClick={analyse}
         className="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-900 hover:bg-brand-100">
-        🔗 Use dataset columns as variables
+        <LinkIcon className="h-4 w-4" />Use dataset columns as variables
       </button>
     );
   }
   return (
     <div className="space-y-3 rounded-xl border border-brand-200 bg-brand-50/40 p-3 text-sm">
       <div className="flex items-center">
-        <span className="font-semibold text-slate-800">🔗 Values taken from the dataset</span>
+        <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800"><LinkIcon className="h-4 w-4" />Values taken from the dataset</span>
         <span className="flex-1" />
-        <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700" title="Close">✕</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700" title="Close" aria-label="Close"><XIcon className="h-4 w-4" /></button>
       </div>
       <p className="text-slate-600">Each row of the dataset becomes one run: the values below are replaced by that row's column.</p>
       {busy && <p className="text-slate-500">Working…</p>}
@@ -130,7 +131,7 @@ export default function VariablesBinder({ agentId, datasetId, onApplied }: {
         );
       })}
       {err && <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800">{err}</p>}
-      {done && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">✓ {done}</p>}
+      {done && <p className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800"><CheckIcon className="h-4 w-4 shrink-0" />{done}</p>}
       {rows.length > 0 && !done && (
         <button type="button" onClick={apply} disabled={busy}
           className="rounded-lg bg-brand-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-950 disabled:opacity-50">

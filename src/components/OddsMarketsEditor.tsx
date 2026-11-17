@@ -8,6 +8,7 @@
  * is honest.
  */
 import { PipelineRow, OddsMarket, PipelineField } from '../yaml';
+import { XIcon } from '../icons';
 
 const METHODS = ['text', 'html', 'attr:href', 'attr:src'];
 
@@ -52,7 +53,7 @@ export default function OddsMarketsEditor({
               placeholder={`Market ${mi + 1} label`}
               className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm"
             />
-            <button onClick={() => removeMarket(mi)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
+            <button onClick={() => removeMarket(mi)} title="Remove market" aria-label="Remove market" className="inline-flex items-center px-1 text-red-400 hover:text-red-600"><XIcon className="h-4 w-4" /></button>
           </div>
           <input
             value={m.sectionSelector || ''}
@@ -77,7 +78,7 @@ export default function OddsMarketsEditor({
                   className="rounded border border-slate-200 px-1 py-1 text-sm">
                   {METHODS.map((x) => <option key={x} value={x}>{x}</option>)}
                 </select>
-                <button onClick={() => removeField(mi, fi)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
+                <button onClick={() => removeField(mi, fi)} title="Remove field" aria-label="Remove field" className="inline-flex items-center px-1 text-red-400 hover:text-red-600"><XIcon className="h-4 w-4" /></button>
               </div>
             ))}
             <button onClick={() => addField(mi)} className="text-xs text-blue-600 hover:underline">+ field</button>

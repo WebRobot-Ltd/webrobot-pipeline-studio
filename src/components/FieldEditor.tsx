@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { wizardInferFields, TenantStudioError } from '../client';
 import { PipelineRow, PipelineField } from '../yaml';
 import SelectorPicker from './SelectorPicker';
+import { TargetIcon, XIcon } from '../icons';
 
 const METHODS = ['text', 'html', 'attr:href', 'attr:src', 'attr:title'];
 
@@ -91,7 +92,7 @@ export default function FieldEditor({
       const j = await wizardInferFields(body);
       const found = (j?.llm?.length ? j.llm : j?.algo) || [];
       const f = found[0];
-      if (!f?.selector) { setInferMsg(`No element found for “${want}” — try other words, or pick it visually with 🎯.`); return; }
+      if (!f?.selector) { setInferMsg(`No element found for “${want}” — try other words, or pick it visually with the target button.`); return; }
       set([...fields, { selector: String(f.selector), as: slug(want), method: String(f.method || 'text') }]);
       setDescribe('');
       setInferMsg(`Added “${slug(want)}” → ${f.selector}. Validate to check the values.`);
@@ -150,10 +151,11 @@ export default function FieldEditor({
             <button
               type="button"
               title="Pick visually — click the element on a live page"
+              aria-label="Pick visually"
               onClick={() => setPickingIdx(i)}
-              className="shrink-0 rounded border border-blue-200 px-1.5 py-1 text-sm hover:bg-blue-50"
+              className="inline-flex shrink-0 items-center rounded border border-blue-200 px-1.5 py-1 text-blue-700 hover:bg-blue-50"
             >
-              🎯
+              <TargetIcon className="h-4 w-4" />
             </button>
           </div>
           <input
@@ -169,7 +171,7 @@ export default function FieldEditor({
           >
             {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
-          <button onClick={() => removeField(i)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
+          <button onClick={() => removeField(i)} title="Remove field" aria-label="Remove field" className="inline-flex items-center px-1 text-red-400 hover:text-red-600"><XIcon className="h-4 w-4" /></button>
           {isFlat && (
             <label className="col-span-4 flex items-center gap-1 text-xs text-slate-400 -mt-1">
               <input

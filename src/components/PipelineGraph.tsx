@@ -11,8 +11,9 @@ import { ReactFlow, Background, Controls, MiniMap, Position, type Node, type Edg
 import '@xyflow/react/dist/style.css';
 import type { PipelineRow } from '../yaml';
 import { friendlyName } from '../stageIdentity';
+import { DatabaseIcon, XIcon, CheckIcon, PencilIcon, type IconComponent } from '../icons';
 
-export interface GraphLook { icon: string; tile: string; label: string }
+export interface GraphLook { icon: IconComponent; tile: string; label: string }
 export interface GraphRun { status: string | null; fill: number | null; rows: number | null }
 
 const COL = 270;   // horizontal step between stages
@@ -86,19 +87,19 @@ export default function PipelineGraph({
           label: (
             <div className="text-left">
               <div className="flex items-center gap-2">
-                <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl ring-1 ${look.tile}`}>{look.icon}</span>
+                <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-700 ring-1 ${look.tile}`}><look.icon className="h-5 w-5" /></span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold text-slate-900">{idx + 1}. {friendlyName(row.stage)}</span>
                   <span className="block truncate text-xs text-slate-500"><span className="font-mono">{row.stage}</span> · {look.label}</span>
                 </span>
-                <button type="button" title="Remove stage"
+                <button type="button" title="Remove stage" aria-label="Remove stage"
                   onClick={(e) => { e.stopPropagation(); onRemove(idx); }}
-                  className="ml-auto rounded px-1 text-sm text-slate-400 hover:bg-rose-50 hover:text-rose-600">✕</button>
+                  className="ml-auto rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><XIcon className="h-3.5 w-3.5" /></button>
               </div>
               {rr && (rr.status || rr.rows != null) && (
-                <div className={`mt-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                <div className={`mt-2 flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ${
                   bad ? 'bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>
-                  {bad ? '✕ failed' : rr.rows != null ? `${rr.rows} rows · ${rr.fill}% filled` : '✓ ran'}
+                  {bad ? <><XIcon className="h-3.5 w-3.5 shrink-0" />failed</> : rr.rows != null ? `${rr.rows} rows · ${rr.fill}% filled` : <><CheckIcon className="h-3.5 w-3.5 shrink-0" />ran</>}
                 </div>
               )}
             </div>
@@ -178,7 +179,7 @@ export default function PipelineGraph({
       data: { label: (
         <div className="text-left">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xl ring-1 ring-emerald-200">💾</span>
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"><DatabaseIcon className="h-5 w-5" /></span>
             <span>
               <span className="block font-mono text-sm font-semibold text-slate-900">save</span>
               <span className="block text-xs text-slate-500">{outputLabel || 'parquet · overwrite'}</span>
@@ -245,7 +246,7 @@ export default function PipelineGraph({
           <div className="wr-noprint absolute z-20 min-w-[210px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
             style={{ left: menu.x, top: menu.y }} onContextMenu={(e) => e.preventDefault()}>
             <div className="truncate border-b border-slate-100 px-3 pb-1.5 pt-1 text-xs font-semibold text-slate-500">{i + 1}. {friendlyName(row.stage)}</div>
-            <button type="button" className={item} onClick={run(() => onSelect(i))}>✎ Edit</button>
+            <button type="button" className={item} onClick={run(() => onSelect(i))}><span className="inline-flex items-center gap-2"><PencilIcon className="h-3.5 w-3.5" />Edit</span></button>
             {actions && actions.sources > 1 && (<>
               <div className="mt-1 border-t border-slate-100 px-3 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Branch</div>
               {Array.from({ length: actions.sources }, (_, k) => k + 1).map((n) => (
@@ -262,7 +263,7 @@ export default function PipelineGraph({
               <button type="button" className={item} onClick={run(() => actions.onDuplicate(i))}>⧉ Duplicate</button>
             </>)}
             <div className="mt-1 border-t border-slate-100" />
-            <button type="button" className={item + ' text-rose-700 hover:bg-rose-50'} onClick={run(() => onRemove(i))}>✕ Remove</button>
+            <button type="button" className={item + ' text-rose-700 hover:bg-rose-50'} onClick={run(() => onRemove(i))}><span className="inline-flex items-center gap-2"><XIcon className="h-3.5 w-3.5" />Remove</span></button>
           </div>
         );
       })()}

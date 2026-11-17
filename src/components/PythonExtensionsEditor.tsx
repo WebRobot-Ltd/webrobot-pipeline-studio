@@ -8,6 +8,7 @@
  * mirrors that so the YAML preview stays honest.
  */
 import { PyExtension } from '../yaml';
+import { XIcon } from '../icons';
 
 const TYPES: { value: PyExtension['type']; label: string; sig: string }[] = [
   { value: 'row_transform', label: 'row_transform', sig: 'def NAME(row):' },
@@ -50,7 +51,7 @@ export default function PythonExtensionsEditor({
               >
                 {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              <button onClick={() => remove(i)} className="text-sm text-red-400 hover:text-red-600 px-1">✕</button>
+              <button onClick={() => remove(i)} title="Remove extension" aria-label="Remove extension" className="inline-flex items-center px-1 text-red-400 hover:text-red-600"><XIcon className="h-4 w-4" /></button>
             </div>
             <div className="text-xs text-slate-400 font-mono">{sig}</div>
             <textarea

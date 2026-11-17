@@ -41,6 +41,7 @@ import {
   wizardInferFields,
   TenantStudioError,
 } from '../client';
+import { BanIcon, BotIcon, CheckCircleIcon, LinkIcon, SparklesIcon, SquareDashedIcon, TargetIcon, XIcon } from '../icons';
 
 // ── Public shapes ────────────────────────────────────────────────────────────
 
@@ -413,7 +414,7 @@ export default function SelectorPicker({
       if (!sid) return;
       // Blocked by captcha (and not in anti-bot capture) → the Resume button is the only path.
       if (blockRef.current && !antiBotRef.current) {
-        setStatus({ kind: 'warn', text: '⚠️ Session blocked by captcha — resolve in the mirror before sending new actions.' });
+        setStatus({ kind: 'warn', text: 'Session blocked by captcha — resolve in the mirror before sending new actions.' });
         return;
       }
       const batch = Array.isArray(actionOrBatch) ? actionOrBatch : [actionOrBatch];
@@ -543,7 +544,7 @@ export default function SelectorPicker({
         setBlock(j.block);
         blockRef.current = j.block;
         pushBlockStateToIframe(j.block);
-        setStatus({ kind: 'warn', text: '⚠️ The block still seems active. Complete the captcha in the mirror, then retry.' });
+        setStatus({ kind: 'warn', text: 'The block still seems active. Complete the captcha in the mirror, then retry.' });
       }
     } catch (e) {
       if (e instanceof TenantStudioError && e.status === 409 && (e.body as any)?.block) {
@@ -551,7 +552,7 @@ export default function SelectorPicker({
         setBlock(b);
         blockRef.current = b;
         pushBlockStateToIframe(b);
-        setStatus({ kind: 'warn', text: '⚠️ The block still seems active. Complete the captcha in the mirror, then retry.' });
+        setStatus({ kind: 'warn', text: 'The block still seems active. Complete the captcha in the mirror, then retry.' });
       } else {
         setStatus({ kind: 'warn', text: 'resume failed: ' + ((e as Error).message || String(e)) });
       }
@@ -573,7 +574,7 @@ export default function SelectorPicker({
       onAntiBot?.(reason);
       setStatus({
         kind: 'warn',
-        text: `🤖 Anti-bot detected (${reason}) — capture switched to RAW EVENT mode. Pipeline should be tagged HITL-required.`,
+        text: `Anti-bot detected (${reason}) — capture switched to RAW EVENT mode. Pipeline should be tagged HITL-required.`,
       });
     },
     [post, onAntiBot],
@@ -598,12 +599,12 @@ export default function SelectorPicker({
         (sample ? ` that contains the text «${sample}»` : '') +
         '. It must match ALL similar rows: ignore auto-generated/hashed classes and :nth-of-type, prefer stable tags/attributes (data-testid, custom element, semantic classes).';
     try {
-      setStatus({ kind: 'info', text: '🧬 Generalizing row selector (AI)…' });
+      setStatus({ kind: 'info', text: 'Generalizing row selector (AI)…' });
       const j = await wizardInferSegment({ html, segmentation_prompt: prompt });
       const sel = (j && j.segment_selector) || '';
       if (sel) {
         try { source.postMessage({ type: 'webrobot-generalize-result', selector: sel }, { targetOrigin: '*' } as WindowPostMessageOptions); } catch { /* ignore */ }
-        setStatus({ kind: 'info', text: '🧬 Generalized row selector applied.' });
+        setStatus({ kind: 'info', text: 'Generalized row selector applied.' });
       } else {
         setStatus({ kind: 'info', text: 'AI generalization unavailable — using the heuristic selector.' });
       }
@@ -662,7 +663,7 @@ export default function SelectorPicker({
         // oddsSelect market-box capture.
         if (pickingMarketRef.current) {
           pickingMarketRef.current = false;
-          setStatus({ kind: 'info', text: '📦 Market captured — inferring structure…' });
+          setStatus({ kind: 'info', text: 'Market captured — inferring structure…' });
           onMarketBox?.({ selector: d.selector, html: d.sampleHtmlFull || d.sampleHtml || '' });
           return;
         }
@@ -673,7 +674,7 @@ export default function SelectorPicker({
           setMacroBox(mb);
           onMacroBox?.(mb);
           sendHighlight([{ selector: d.selector, color: '#6366f1', label: 'content box' }]);
-          setStatus({ kind: 'info', text: '📦 Content box set — describe the fields, then 🪄 Auto-suggest.' });
+          setStatus({ kind: 'info', text: 'Content box set — describe the fields, then Auto-suggest.' });
           return;
         }
         const result: PickResult = {
@@ -692,10 +693,10 @@ export default function SelectorPicker({
           if (n <= 1) {
             setStatus({
               kind: 'error',
-              text: `🧩 Row container matched only ${n} element — that's not a repeating wrapper. Click two parts of ONE row (closer together), or switch to parallelSelect for split rows.`,
+              text: `Row container matched only ${n} element — that's not a repeating wrapper. Click two parts of ONE row (closer together), or switch to parallelSelect for split rows.`,
             });
           } else {
-            setStatus({ kind: 'info', text: `🧩 Row container set (${n} rows): ${d.selector}` });
+            setStatus({ kind: 'info', text: `Row container set (${n} rows): ${d.selector}` });
           }
           onPick?.(result);
           return;
@@ -935,7 +936,7 @@ export default function SelectorPicker({
   const selectMacroBox = useCallback(() => {
     pickingMacroRef.current = true;
     post({ type: 'webrobot-picker-mode', mode: 'selector-single', linkMode: false });
-    setStatus({ kind: 'info', text: '📦 Click the content region (e.g. the article body) to set the box.' });
+    setStatus({ kind: 'info', text: 'Click the content region (e.g. the article body) to set the box.' });
   }, [post]);
 
   const clearMacroBox = useCallback(() => {
@@ -947,7 +948,7 @@ export default function SelectorPicker({
   const runAutoSuggestFields = useCallback(async () => {
     const intent = aiIntent.trim();
     if (!intent) { setStatus({ kind: 'error', text: 'Describe which fields to extract in the intent box.' }); return; }
-    if (!macroBox) { setStatus({ kind: 'error', text: 'Select a content box first (📦).' }); return; }
+    if (!macroBox) { setStatus({ kind: 'error', text: 'Select a content box first.' }); return; }
     setAiLoading(true);
     try {
       const body: Record<string, unknown> = {
@@ -1043,8 +1044,8 @@ export default function SelectorPicker({
               ← Back
             </button>
           )}
-          <button onClick={onClose} className="rounded px-2 py-1.5 text-slate-400 hover:bg-slate-100">
-            ✕
+          <button onClick={onClose} className="rounded px-2 py-1.5 text-slate-400 hover:bg-slate-100" title="Close" aria-label="Close">
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -1080,7 +1081,7 @@ export default function SelectorPicker({
         {/* Captcha / WAF block banner */}
         {block && (
           <div className="flex items-center justify-between gap-2 bg-amber-100 px-3 py-2 text-sm text-amber-900">
-            <span>🛑 Blocked ({block.kind || 'captcha'}). Solve it in the mirror below, then resume.</span>
+            <span className="inline-flex items-center gap-1.5"><BanIcon className="h-4 w-4 shrink-0" />Blocked ({block.kind || 'captcha'}). Solve it in the mirror below, then resume.</span>
             <button
               onClick={resumeAfterCaptcha}
               disabled={resumeBusy}
@@ -1093,8 +1094,8 @@ export default function SelectorPicker({
 
         {/* Anti-bot warning */}
         {antiBot.detected && (
-          <div className="bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
-            🤖 Anti-bot detected ({antiBot.reason}) — raw-event capture. Tag the pipeline HITL-required.
+          <div className="flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+            <BotIcon className="h-4 w-4 shrink-0" />Anti-bot detected ({antiBot.reason}) — raw-event capture. Tag the pipeline HITL-required.
           </div>
         )}
 
@@ -1102,8 +1103,8 @@ export default function SelectorPicker({
         {intendedMode && loadedUrl && (
           <div className="flex items-center gap-2 border-b bg-blue-50 px-3 py-2 text-sm text-blue-800">
             <span>Navigate to the target page, then arm selection:</span>
-            <button onClick={promoteToIntendedMode} className="rounded bg-blue-600 px-3 py-1 text-white">
-              📌 Start {intendedMode === 'multi-field' ? 'field selection' : intendedMode === 'multi-sample' ? 'multi-link sampling' : 'selector picking'}
+            <button onClick={promoteToIntendedMode} className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-white">
+              <TargetIcon className="h-4 w-4" />Start {intendedMode === 'multi-field' ? 'field selection' : intendedMode === 'multi-sample' ? 'multi-link sampling' : 'selector picking'}
             </button>
           </div>
         )}
@@ -1191,7 +1192,7 @@ export default function SelectorPicker({
         {/* ── multi-sample panel ── */}
         {pickerMode === 'multi-sample' && (
           <div className="border-t px-3 py-2 text-sm">
-            <strong>📍 Repeating-link sampler</strong>
+            <strong className="inline-flex items-center gap-1.5"><LinkIcon className="h-4 w-4" />Repeating-link sampler</strong>
             <div className="mt-1 text-sm text-slate-500">
               Click 2+ examples of the same repeating element. The picker grows a selector that matches all clicked samples.
             </div>
@@ -1220,13 +1221,14 @@ export default function SelectorPicker({
         {pickerMode === 'multi-field' && (
           <div className="border-t px-3 py-2 text-sm">
             <div className="mb-1 flex flex-wrap items-center gap-2">
-              <strong>🎯 Multi-field picker</strong>
-              <button onClick={selectMacroBox} className="rounded border px-2 py-1" title="Click the content region — AI infers fields from THAT box only.">
-                {macroBox ? '📦 Content box ✓ (re-pick)' : '📦 Select content box'}
+              <strong className="inline-flex items-center gap-1.5"><TargetIcon className="h-4 w-4" />Multi-field picker</strong>
+              <button onClick={selectMacroBox} className="inline-flex items-center gap-1.5 rounded border px-2 py-1" title="Click the content region — AI infers fields from THAT box only.">
+                <SquareDashedIcon className="h-4 w-4" />
+                {macroBox ? <>Content box <CheckCircleIcon className="h-4 w-4 text-emerald-600" /> (re-pick)</> : 'Select content box'}
               </button>
               {macroBox && (
-                <button onClick={clearMacroBox} className="rounded border px-2 py-1" title="Clear content box">
-                  ✕
+                <button onClick={clearMacroBox} className="inline-flex items-center rounded border px-2 py-1" title="Clear content box" aria-label="Clear content box">
+                  <XIcon className="h-4 w-4" />
                 </button>
               )}
               <input
@@ -1239,12 +1241,12 @@ export default function SelectorPicker({
               <button
                 onClick={runAutoSuggestFields}
                 disabled={aiLoading || !aiIntent.trim() || !macroBox}
-                className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
               >
-                {aiLoading ? 'Thinking…' : '🪄 Auto-suggest fields'}
+                {aiLoading ? 'Thinking…' : <><SparklesIcon className="h-4 w-4" />Auto-suggest fields</>}
               </button>
-              <button onClick={onClose} className="rounded border px-2 py-1">
-                ✅ Done
+              <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded border px-2 py-1">
+                <CheckCircleIcon className="h-4 w-4 text-emerald-600" />Done
               </button>
             </div>
             <div className="text-sm text-slate-500">Click each field on the page to add it. Edit names below.</div>
@@ -1283,8 +1285,8 @@ export default function SelectorPicker({
                         {(f._sample || '').slice(0, 32)}
                       </td>
                       <td>
-                        <button onClick={() => removeField(fIdx)} className="rounded bg-red-500 px-1.5 py-0.5 text-white">
-                          ✕
+                        <button onClick={() => removeField(fIdx)} className="inline-flex items-center rounded bg-red-500 px-1.5 py-0.5 text-white" title="Remove field" aria-label="Remove field">
+                          <XIcon className="h-3.5 w-3.5" />
                         </button>
                       </td>
                     </tr>

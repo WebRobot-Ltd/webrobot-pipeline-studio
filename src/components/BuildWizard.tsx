@@ -70,6 +70,10 @@ import SelectorPicker, {
 } from './SelectorPicker';
 
 import { lookOf, PHASES, sequenceAdvice, friendlyName, isLoadStage, isSaveStage } from '../stageIdentity';
+import {
+  AlertTriangleIcon, BotIcon, CheckIcon, CompassIcon, DatabaseIcon, DownloadIcon, LightbulbIcon, MessageSquareIcon,
+  PrinterIcon, SearchIcon, SparklesIcon, TargetIcon, VideoIcon, WrenchIcon, XIcon,
+} from '../icons';
 interface CatalogStage extends StageSpec {
   category?: string;
   description?: string;
@@ -365,7 +369,7 @@ export default function BuildWizard({
     const fetchRow = pipeline[idx];
     const browser = full?.fetch_method === 'browser';
     const notes: string[] = [];
-    if (full?.legal_status === 'licence') notes.push('⚠ Its terms restrict automated collection: you need a licence to use this data.');
+    if (full?.legal_status === 'licence') notes.push('Its terms restrict automated collection: you need a licence to use this data.');
     if (browser && fetchRow?.stage !== 'visit') notes.push('The catalogue fetches this site with a browser: consider switching this row to visit.');
     const tpl = sel?.search?.url_template;
     setRecipeSearch((m) => {
@@ -415,7 +419,7 @@ export default function BuildWizard({
       : `extracts ${listing.length} field${listing.length === 1 ? '' : 's'} from each item of the list`;
     const pag = sel.pagination && (sel.pagination.note || sel.pagination.selector)
       ? ` Pagination: ${sel.pagination.note || sel.pagination.selector} — add the next pages' URLs if you need more than the first page.` : '';
-    setRecipeNote((m) => ({ ...m, [idx]: [`Recipe from the catalogue${when}: the pipeline now ${what}. Every stage stays editable — check them with 🎯 Pick visually or a dry run.${pag}`, ...notes].join(' ') }));
+    setRecipeNote((m) => ({ ...m, [idx]: [`Recipe from the catalogue${when}: the pipeline now ${what}. Every stage stays editable — check them with Pick visually or a dry run.${pag}`, ...notes].join(' ') }));
   };
 
   const pfToPickField = (f: PipelineField): PickField => ({
@@ -969,15 +973,15 @@ export default function BuildWizard({
     return (
       <div className="mt-3 space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-slate-800">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold text-emerald-800">✓ Saved to agent “{saved.agentName}”</span>
+          <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-800"><CheckIcon className="h-4 w-4 shrink-0" />Saved to agent “{saved.agentName}”</span>
           {a && <a href={a} className={`${btn} border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100`}>Open the agent →</a>}
           <span className="flex-1" />
-          <button type="button" onClick={() => setSaved(null)} className="text-slate-400 hover:text-slate-700" title="Close">✕</button>
+          <button type="button" onClick={() => setSaved(null)} className="text-slate-400 hover:text-slate-700" title="Close" aria-label="Close"><XIcon className="h-4 w-4" /></button>
         </div>
         <p className="text-slate-600">This page now edits this agent: the next Save updates it. Category, description and execution mode are set on the agent page.</p>
         {r ? (
           r.error ? (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-rose-800">⚠ Saved, but the run did not start: {r.error}</p>
+            <p className="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2 text-rose-800"><AlertTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" /><span>Saved, but the run did not start: {r.error}</span></p>
           ) : (
             <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-3 py-2">
               <span>▶ <b>{ENGINE_LABEL[r.engine || 'spark'] || r.engine} run submitted</b>{r.executionId ? <> · run <code>{r.executionId}</code></> : null} — the data appears in the job's results.</span>
@@ -1018,8 +1022,8 @@ export default function BuildWizard({
         <li key={idx} className={`rounded-xl border border-slate-200 border-l-4 ${look.bar} p-3 bg-white shadow-sm`}>
           <div className="flex items-center gap-3 mb-2.5">
             <span aria-hidden="true"
-              className={`relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-2xl leading-none ring-1 ${look.tile}`}>
-              {look.icon}
+              className={`relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-700 ring-1 ${look.tile}`}>
+              <look.icon className="h-6 w-6" />
               <span className="absolute -top-1.5 -left-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-800 px-1 text-[11px] font-semibold text-white">
                 {idx + 1}
               </span>
@@ -1031,8 +1035,8 @@ export default function BuildWizard({
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${look.chip}`}>{look.label}</span>
                 {!embedded && rowRun?.[idx] && (/fail|error/i.test(rowRun[idx].status || '') || (rowRun[idx].fill != null && (rowRun[idx].fill as number) < 50)) && (
                   <button type="button" onClick={() => fixStageWithAI(idx)} disabled={generating}
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full border border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100 disabled:opacity-50">
-                    ✨ Fix with AI
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100 disabled:opacity-50">
+                    <SparklesIcon className="h-3.5 w-3.5" />Fix with AI
                   </button>
                 )}
                 {rowRun?.[idx] && (rowRun[idx].status || rowRun[idx].rows != null) && (() => {
@@ -1040,8 +1044,9 @@ export default function BuildWizard({
                   const bad = /fail|error/i.test(rr.status || '');
                   return (
                     <span title={rr.message || 'last dry run'}
-                      className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bad ? 'border-rose-300 bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
-                      {bad ? '✕ failed' : rr.rows != null ? `✓ ${rr.rows} rows · fields ${rr.fill}% filled` : '✓ ran'}
+                      className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${bad ? 'border-rose-300 bg-rose-50 text-rose-800' : rr.fill != null && rr.fill < 80 ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
+                      {bad ? <XIcon className="h-3.5 w-3.5 shrink-0" /> : <CheckIcon className="h-3.5 w-3.5 shrink-0" />}
+                      {bad ? 'failed' : rr.rows != null ? `${rr.rows} rows · fields ${rr.fill}% filled` : 'ran'}
                     </span>
                   );
                 })()}
@@ -1070,7 +1075,7 @@ export default function BuildWizard({
                 className={`${iconBtn} text-slate-500 hover:bg-slate-100 hover:text-slate-800`}>↓</button>
               <button onClick={() => removeStage(idx)}
                 title="Remove stage" aria-label="Remove stage"
-                className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}>✕</button>
+                className={`${iconBtn} text-red-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600`}><XIcon className="h-4 w-4" /></button>
             </span>
           </div>
           {(isLoadStage(row.stage) || isSaveStage(row.stage)) && (() => {
@@ -1106,7 +1111,7 @@ export default function BuildWizard({
                 <button
                   onClick={() => setPickerFor(idx)}
                   className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg border border-brand-600/30 bg-brand-600/5 text-brand-900 hover:bg-brand-600/10">
-                  <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick visually
+                  <TargetIcon className="h-4 w-4" /> Pick visually
                 </button>
                 {(() => {
                   const fr = pipeline[fetchRowIndexFor(idx)];
@@ -1175,7 +1180,7 @@ export default function BuildWizard({
                 const urlName = args.find((n) => /url/i.test(n)) || 'url';
                 return (
                   <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-brand-100 bg-white px-3 py-2">
-                    <span className="text-sm text-slate-600">🔎 Start from the site's search:</span>
+                    <span className="inline-flex items-center gap-1.5 text-sm text-slate-600"><SearchIcon className="h-4 w-4" />Start from the site's search:</span>
                     <input value={rs.q} onChange={(e) => setRecipeSearch((m) => ({ ...m, [idx]: { ...rs, q: e.target.value } }))}
                       placeholder="what to search, e.g. magnesio" className="flex-1 min-w-[160px] rounded border border-slate-300 px-2 py-1 text-sm" />
                     <button type="button" disabled={!rs.q.trim()}
@@ -1190,7 +1195,7 @@ export default function BuildWizard({
               <button
                 onClick={() => setPickerFor(idx)}
                 className="mb-1 inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                <span className="text-lg leading-none" aria-hidden="true">🎯</span> Pick market box
+                <TargetIcon className="h-4 w-4" /> Pick market box
               </button>
               <OddsMarketsEditor row={row} onChange={(m) => setMarkets(idx, m)} />
             </>
@@ -1205,7 +1210,7 @@ export default function BuildWizard({
                 title={urlOfRow(row) ? 'Open the page and record the steps' : 'This row needs a URL first'}
                 disabled={!urlOfRow(row)}
                 className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-                <span className="text-lg leading-none" aria-hidden="true">🎬</span> Record actions
+                <VideoIcon className="h-4 w-4" /> Record actions
               </button>
               {row._trace?.length ? (
                 <>
@@ -1240,10 +1245,10 @@ export default function BuildWizard({
     return (
       <div className="space-y-3 p-2">
         <div className="flex items-center">
-          <span className="text-sm font-semibold text-slate-700">💾 Result dataset</span>
+          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700"><DatabaseIcon className="h-4 w-4" />Result dataset</span>
           <span className="flex-1" />
-          <button type="button" onClick={() => setSaveSel(false)} title="Close"
-            className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+          <button type="button" onClick={() => setSaveSel(false)} title="Close" aria-label="Close"
+            className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><XIcon className="h-4 w-4" /></button>
         </div>
         <label className="block text-sm text-slate-600">Format
           <select className={inp} value={o.format} onChange={(e) => set({ format: e.target.value as OutputSpec['format'] })}>
@@ -1259,7 +1264,7 @@ export default function BuildWizard({
         </label>
         <p className="text-xs text-slate-500">
           The run always writes this dataset to the platform storage. To ALSO write somewhere else (a database,
-          BigQuery, a file on S3…), add a 💾 Save data stage.
+          BigQuery, a file on S3…), add a Save data stage.
         </p>
       </div>
     );
@@ -1287,8 +1292,8 @@ export default function BuildWizard({
         <div className="flex items-center">
           <span className="text-sm font-semibold text-slate-700">⟹ Combine the sources</span>
           <span className="flex-1" />
-          <button type="button" onClick={() => setMergeSel(false)} title="Close"
-            className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+          <button type="button" onClick={() => setMergeSel(false)} title="Close" aria-label="Close"
+            className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><XIcon className="h-4 w-4" /></button>
         </div>
         <div className="space-y-1">
           {types.map(([t, l]) => (
@@ -1335,8 +1340,8 @@ export default function BuildWizard({
   const renderPalette = () => {
     const laneOpts: TargetSource[] = [...Array.from({ length: maxSourceNum() }, (_, k) => k + 1), 'shared'];
     const gens = [
-      { stage: 'fetch', icon: '📥', title: 'Load data' },
-      { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: '💾', title: 'Save data' },
+      { stage: 'fetch', icon: DownloadIcon, title: 'Load data' },
+      { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: DatabaseIcon, title: 'Save data' },
     ];
     const add = (st: string) => addStage(st);
     if (!paletteOpen) {
@@ -1371,7 +1376,7 @@ export default function BuildWizard({
             {gens.map((g) => (
               <button key={g.title} type="button" onClick={() => add(g.stage)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-slate-100">
-                <span aria-hidden="true">{g.icon}</span><span className="truncate font-medium text-slate-800">{g.title}</span>
+                <g.icon className="h-4 w-4 shrink-0 text-slate-500" /><span className="truncate font-medium text-slate-800">{g.title}</span>
               </button>
             ))}
           </div>
@@ -1383,7 +1388,7 @@ export default function BuildWizard({
                 return (
                   <button key={st.stage_name} type="button" onClick={() => add(st.stage_name)} title={st.description || lk.blurb}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-slate-100">
-                    <span aria-hidden="true">{lk.icon}</span>
+                    <lk.icon className="h-4 w-4 shrink-0 text-slate-500" />
                     <span className="min-w-0 truncate text-slate-800">{friendlyName(st.stage_name)}</span>
                   </button>
                 );
@@ -1435,8 +1440,8 @@ export default function BuildWizard({
                  <div className="mb-2 flex items-center px-1">
                    <span className="text-sm font-semibold text-slate-700">Stage {graphSel + 1}</span>
                    <span className="flex-1" />
-                   <button type="button" onClick={() => setGraphSel(null)} title="Close"
-                     className="rounded px-1.5 text-sm text-slate-400 hover:bg-slate-200 hover:text-slate-700">✕</button>
+                   <button type="button" onClick={() => setGraphSel(null)} title="Close" aria-label="Close"
+                     className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><XIcon className="h-4 w-4" /></button>
                  </div>
                  <ol>{renderStageCard(pipeline[graphSel], graphSel)}</ol>
                </div>
@@ -1497,7 +1502,7 @@ export default function BuildWizard({
                     className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                     title="Not sure how to describe it? The agent asks you a few questions first, then designs it"
                   >
-                    🧭 Guided
+                    <span className="inline-flex items-center gap-1.5"><CompassIcon className="h-4 w-4" />Guided</span>
                   </button>
                   <button
                     type="button"
@@ -1552,8 +1557,8 @@ export default function BuildWizard({
           {/* Mini-form del guidato: le domande dell'agente, una risposta ciascuna, poi "Design it". */}
           {guidedQuestions && (
             <div className="lg:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <div className="mb-2 text-sm font-medium text-emerald-900">
-                🧭 A few questions, then I&apos;ll build it
+              <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-emerald-900">
+                <CompassIcon className="h-4 w-4" />A few questions, then I&apos;ll build it
               </div>
               <div className="space-y-2">
                 {guidedQuestions.map((q, i) => (
@@ -1639,9 +1644,9 @@ export default function BuildWizard({
           <ol className="max-h-64 space-y-1 overflow-y-auto">
             {agentSteps.filter((x) => x.kind !== 'text' || x.detail.length < 400).map((st, i) => (
               <li key={i} className="text-sm leading-snug">
-                {st.kind === 'call' && <span className="text-slate-800">🔧 <b>{st.label}</b> <span className="text-slate-500">{st.detail.slice(0, 110)}</span></span>}
+                {st.kind === 'call' && <span className="text-slate-800"><WrenchIcon className="mr-1.5 inline h-3.5 w-3.5 align-[-2px] text-slate-500" /><b>{st.label}</b> <span className="text-slate-500">{st.detail.slice(0, 110)}</span></span>}
                 {st.kind === 'result' && <span className={`block pl-6 ${st.label === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>↳ {st.detail.slice(0, 160)}</span>}
-                {st.kind === 'text' && <span className="block text-slate-700">💬 {st.detail.slice(0, 200)}</span>}
+                {st.kind === 'text' && <span className="block text-slate-700"><MessageSquareIcon className="mr-1.5 inline h-3.5 w-3.5 align-[-2px] text-slate-500" />{st.detail.slice(0, 200)}</span>}
               </li>
             ))}
             {generating && agentSteps.length === 0 && <li className="text-sm text-slate-500">Starting… the first steps appear in a few seconds.</li>}
@@ -1654,8 +1659,8 @@ export default function BuildWizard({
       {draft && (
         <div className="lg:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-base font-semibold text-blue-900">
-              🤖 The assistant proposes a pipeline
+            <span className="inline-flex items-center gap-1.5 text-base font-semibold text-blue-900">
+              <BotIcon className="h-5 w-5" />The assistant proposes a pipeline
             </span>
             {draft.pipeline_name && (
               <span className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs text-blue-700">
@@ -1757,8 +1762,8 @@ export default function BuildWizard({
               )}
             <span className="flex-1" />
             <button onClick={handleValidate}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-              ✓ Validate
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              <CheckIcon className="h-4 w-4" />Validate
             </button>
             <div className="flex gap-2">
               {/* One Save (user 10-25: "Save & run" next to Save was confusing and gave no feedback).
@@ -1817,8 +1822,8 @@ export default function BuildWizard({
           {(() => {
             const q = filter.trim().toLowerCase();
             const gens = [
-              { stage: 'fetch', icon: '📥', title: 'Load data', blurb: 'A web page, a file (CSV, XML…), a database or a stream — choose it in the node' },
-              { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: '💾', title: 'Save data', blurb: 'Also write the result to a file or a database (CSV, Postgres, BigQuery…)' },
+              { stage: 'fetch', icon: DownloadIcon, title: 'Load data', blurb: 'A web page, a file (CSV, XML…), a database or a stream — choose it in the node' },
+              { stage: catalog.some((c) => c.stage_name === 'save_csv') ? 'save_csv' : 'save_parquet', icon: DatabaseIcon, title: 'Save data', blurb: 'Also write the result to a file or a database (CSV, Postgres, BigQuery…)' },
             ].filter((g) => !q || (g.title + ' ' + g.blurb).toLowerCase().includes(q) || 'load save csv database file'.includes(q));
             if (!gens.length) return null;
             return (
@@ -1827,7 +1832,7 @@ export default function BuildWizard({
                 {gens.map((g) => (
                   <button key={g.title} type="button" onClick={() => addStage(g.stage)} title={g.blurb}
                     className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-slate-200 hover:bg-slate-50">
-                    <span aria-hidden="true" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-lg leading-none ring-1 ring-sky-200">{g.icon}</span>
+                    <span aria-hidden="true" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-200"><g.icon className="h-5 w-5" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-slate-800">{g.title}</span>
                       <span className="block truncate text-xs text-slate-500">{g.blurb}</span>
@@ -1862,8 +1867,8 @@ export default function BuildWizard({
                     className="group flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-slate-200 hover:bg-slate-50"
                   >
                     <span aria-hidden="true"
-                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg leading-none ring-1 ${look.tile}`}>
-                      {look.icon}
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-700 ring-1 ${look.tile}`}>
+                      <look.icon className="h-5 w-5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-slate-800">
@@ -1924,9 +1929,9 @@ export default function BuildWizard({
               <h3 className="text-base font-semibold text-slate-800">{label || 'Pipeline'} — graph</h3>
               <span className="flex-1" />
               <button type="button" onClick={() => window.print()} title="Print the graph, or save it as PDF from the print dialog"
-                className="wr-noprint rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">🖨 Print / PDF</button>
+                className="wr-noprint inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"><PrinterIcon className="h-4 w-4" />Print / PDF</button>
               <button type="button" onClick={() => setGraphFull(false)} title="Close (Esc)"
-                className="wr-noprint rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">✕ Close</button>
+                className="wr-noprint inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"><XIcon className="h-4 w-4" />Close</button>
             </div>
             <div className="min-h-0 flex-1">{renderGraphArea('calc(100vh - 120px)', true)}</div>
           </div>
@@ -1954,12 +1959,12 @@ export default function BuildWizard({
                     }
                   >
                     <span aria-hidden="true"
-                      className={'inline-flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none '
-                        + (done ? 'bg-emerald-100' : 'bg-white grayscale opacity-60')}>
-                      {ph.icon}
+                      className={'inline-flex h-7 w-7 items-center justify-center rounded-full '
+                        + (done ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-400')}>
+                      <ph.icon className="h-4 w-4" />
                     </span>
                     {ph.title}
-                    {done && <span className="text-emerald-600" aria-label="done">✓</span>}
+                    {done && <span className="text-emerald-600" role="img" aria-label="done"><CheckIcon className="h-4 w-4" /></span>}
                   </span>
                   {i < PHASES.length - 1 && <span className="text-lg text-slate-300" aria-hidden="true">→</span>}
                 </li>
@@ -1968,7 +1973,7 @@ export default function BuildWizard({
           </ol>
           {flatExtractIssues.map((f) => (
             <p key={f} className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              <span className="text-lg leading-none" aria-hidden="true">⚠️</span>
+              <AlertTriangleIcon className="h-4 w-4 shrink-0" />
               Stage {f + 1} (flatSelect) is followed by an extract: after a flatSelect there is no page left to read.
               To read each item's page, follow its link with a join.
               <button type="button" onClick={() => flatSelectToJoin(f)}
@@ -1979,7 +1984,7 @@ export default function BuildWizard({
           ))}
           {advice.missing && (
             <p className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              <span className="text-lg leading-none" aria-hidden="true">💡</span>{advice.missing}
+              <LightbulbIcon className="mt-0.5 h-4 w-4 shrink-0" />{advice.missing}
             </p>
           )}
         </div>
@@ -2060,7 +2065,7 @@ export default function BuildWizard({
             ))}
             <span className="flex-1" />
             {!embedded && (
-              <button onClick={handleValidate} className="mb-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">✓ Validate</button>
+              <button onClick={handleValidate} className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><CheckIcon className="h-4 w-4" />Validate</button>
             )}
           </div>
           <div className="p-3">

@@ -3,6 +3,7 @@
 // already returns the extracted rows and the per-stage steps, but the designer showed only
 // "valid · 12 records". A pipeline is judged by its rows: show them, and show where it breaks.
 import { useMemo, useState } from 'react';
+import { CheckIcon } from '../icons';
 
 interface Step { stage?: string; status?: string; message?: string }
 
@@ -23,8 +24,9 @@ export default function DataPreview({ result }: { result: any }) {
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-white">
       <div className={`flex flex-wrap items-center gap-2 rounded-t-xl border-b px-4 py-2.5 ${valid && count > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
-        <span className={`text-base font-semibold ${valid && count > 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
-          {valid && count > 0 ? `✓ ${count} rows extracted` : valid ? 'Ran, but no rows extracted' : 'The pipeline does not work yet'}
+        <span className={`inline-flex items-center gap-1.5 text-base font-semibold ${valid && count > 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
+          {valid && count > 0 && <CheckIcon className="h-4 w-4 shrink-0" />}
+          {valid && count > 0 ? `${count} rows extracted` : valid ? 'Ran, but no rows extracted' : 'The pipeline does not work yet'}
         </span>
         {result?.final_url && (
           <a href={result.final_url} target="_blank" rel="noopener noreferrer" className="truncate text-sm text-slate-600 underline">{result.final_url}</a>
