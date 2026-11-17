@@ -152,6 +152,7 @@ export default function BuildWizard({
   organizations,
   draftContext = 'etl:pipeline-designer',
   links,
+  openAgentId,
 }: {
   chatSlot?: ReactNode;
   value?: string;
@@ -179,6 +180,12 @@ export default function BuildWizard({
     job?: (jobId: string | number, projectId?: string | number) => string;
     newProject?: (agentId: string | number) => string;
   };
+  /**
+   * Open an EXISTING agent's pipeline for editing (e.g. from Agents → Edit → "Open Pipeline
+   * Designer"): its YAML is loaded onto the canvas and "Save to" points at that agent, so saving
+   * replaces its pipeline instead of creating a new agent.
+   */
+  openAgentId?: string | number;
 } = {}) {
   const controlled = value !== undefined && typeof onChange === 'function';
   const [catalog, setCatalog] = useState<CatalogStage[]>([]);
@@ -254,6 +261,29 @@ export default function BuildWizard({
         .sort((a, b) => a.name.localeCompare(b.name)));
     }).catch(() => setAgentsList([]));
   }, []);
+
+  // Open an existing agent (openAgentId): load its YAML once the catalogue is known.
+  const openedAgent = useRef<string | null>(null);
+  const [openNote, setOpenNote] = useState<string | null>(null);
+  useEffect(() => {
+    const id = openAgentId != null ? String(openAgentId) : '';
+    if (!id || controlled || openedAgent.current === id || !catalog.length) return;
+    openedAgent.current = id;
+    listPipelines().then((r: any) => {
+      const demos: any[] = Array.isArray(r) ? r : (r?.demos || []);
+      const it = demos.find((d) => String(d?.agent_id) === id);
+      const y = it?.pipeline_yaml ? String(it.pipeline_yaml) : '';
+      const rows = y ? parsePipelineFromYaml(y, { catalog }) : [];
+      if (!rows.length) { setOpenNote(`Agent ${id}: no pipeline to open here.`); return; }
+      setPipeline(rows);
+      setCombine(parseCombineFromYaml(y));
+      setOutput(parseOutputFromYaml(y));
+      const name = String(it.agent_name || it.pipeline_name || `agent ${id}`);
+      setAgentsList((l) => (l.some((a) => a.id === id) ? l : [...l, { id, name }]));
+      setSaveTarget(id);
+      setOpenNote(`Editing “${name}” — Save replaces its pipeline.`);
+    }).catch(() => setOpenNote(`Agent ${id}: could not load its pipeline.`));
+  }, [openAgentId, controlled, catalog]);
 
   useEffect(() => {
     getStageCatalog()
@@ -1411,7 +1441,7 @@ export default function BuildWizard({
 
   // Graph area (canvas + node inspector): inline in the page, or full-screen for more room.
   const renderGraphArea = (h: number | string, full: boolean) => (
-          <div className={`wr-graph-grid mb-4 grid grid-cols-1 gap-3 items-start ${full ? (paletteOpen ? 'xl:grid-cols-[260px_minmax(0,1fr)_420px]' : 'xl:grid-cols-[40px_minmax(0,1fr)_420px]') : 'xl:grid-cols-[minmax(0,1fr)_440px]'}`}>
+          <div className={`wr-graph-grid mb-4 grid grid-cols-1 gap-3 items-start ${full ? (paletteOpen ? 'xl:grid-cols-[260px_minmax(0,1fr)_420px]' : 'xl:grid-cols-[40px_minmax(0,1fr)_420px]') : ''}`}>
            {full && renderPalette()}
            <div className="wr-print-canvas min-w-0">
             <PipelineGraph
@@ -1443,7 +1473,7 @@ export default function BuildWizard({
             <p className="wr-noprint mt-2 text-sm text-slate-500">Click a node to edit it in the panel · + adds a stage to that lane from the catalogue.</p>
            </div>
            {/* Inspector: the selected node's full form, right beside the canvas. */}
-           <aside className={"wr-noprint " + (full ? "max-h-full" : "xl:sticky xl:top-20 max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
+           <aside className={"wr-noprint " + (full ? "max-h-full" : "max-h-[560px]") + " overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"}>
              {saveSel ? renderOutputForm() : mergeSel && multiSource ? renderCombineForm() : graphSel != null && pipeline[graphSel] ? (
                <div>
                  <div className="mb-2 flex items-center px-1">
@@ -1736,6 +1766,7 @@ export default function BuildWizard({
           reach — before they sat at the bottom of a long column. */}
       {!embedded && (
         <div className="lg:col-span-2 sticky top-0 z-20 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+          {openNote && <p className="mb-2 text-sm text-brand-700">{openNote}</p>}
           <div className="flex flex-wrap items-center gap-2 ">
               <label className="text-sm font-medium text-slate-700" htmlFor="wr-save-target">Save to</label>
               <select id="wr-save-target" value={saveTarget} onChange={(e) => setSaveTarget(e.target.value)}
