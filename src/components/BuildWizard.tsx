@@ -1015,7 +1015,16 @@ export default function BuildWizard({
   // inspector next to the canvas (user 10-23: edit the node right there, not down in the list).
   const renderStageCard = (row: PipelineRow, idx: number) => {
       const spec = findSpec(row.stage);
-      const args = (spec?.arg_schema || []).map((a) => a.name);
+      const schemaArgs = (spec?.arg_schema || []).map((a) => a.name);
+      // A map argument (load_csv `{path, header}`, load_parquet `{path, selectColumns}`) is merged
+      // into row.args by key, so its values live under `path`, `header`… — not under the schema's
+      // single `path_or_spec`. Showing only the schema names left the form EMPTY for a pipeline the
+      // agent had filled in (11-17). Show the keys that actually hold values; keep the schema names
+      // that are still unset so they can be filled by hand.
+      const extraKeys = Object.keys(row.args || {}).filter((k) => !schemaArgs.includes(k) && !/^\d+$/.test(k));
+      const args = extraKeys.length
+        ? [...extraKeys, ...schemaArgs.filter((n) => row.args?.[n] != null && row.args?.[n] !== '' ? true : extraKeys.length === 0)]
+        : schemaArgs;
       const look = lookOf(row.stage, spec?.category);
       const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold shadow-sm transition disabled:opacity-30 disabled:shadow-none';
       return (

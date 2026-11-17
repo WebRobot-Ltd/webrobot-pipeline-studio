@@ -347,10 +347,19 @@ export function buildYamlFromPipeline(pipeline: PipelineRow[], ctx: YamlContext)
     }
     const isFetchLike = FETCH_LIKE_STAGES.has(row.stage);
     const traceLen = isFetchLike && Array.isArray(row._trace) ? row._trace.length : 0;
-    if (filled.length === 0 && traceLen === 0) {
+    // Keys of a MAP argument (load_csv `{path, header}`), merged into row.args by the parser: they
+    // are not schema names, so the loop above skipped them and a load_csv was re-emitted with
+    // `args: []` — no file to read (11-17). Emit them back as one map, in front.
+    const mapKeys = Object.keys(row.args || {}).filter((k) => !orderedArgNames.includes(k) && !/^\d+$/.test(k)
+      && !k.startsWith('_') && row.args[k] != null && row.args[k] !== '');
+    const mapItem = mapKeys.length
+      ? '{ ' + mapKeys.map((k) => `${k}: ${yamlScalar(row.args[k])}`).join(', ') + ' }'
+      : null;
+    if (filled.length === 0 && traceLen === 0 && !mapItem) {
       lines.push('    args: []');
     } else {
       lines.push('    args:');
+      if (mapItem) lines.push(`      - ${mapItem}`);
       for (const [n, v] of filled) lines.push(`      - ${yamlScalar(v)}    # ${n}`);
       if (isFetchLike && traceLen > 0) emitEmbeddedTraceActions(row, lines, '      ');
     }
