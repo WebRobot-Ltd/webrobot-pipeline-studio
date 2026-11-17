@@ -18,6 +18,7 @@ export interface GraphRun { status: string | null; fill: number | null; rows: nu
 
 const COL = 270;   // horizontal step between stages
 const ROW = 170;   // vertical step between lanes
+const VROW = 110;  // vertical step between stages when a single source is drawn top → bottom
 
 export default function PipelineGraph({
   pipeline, lookOf, run, selected, onSelect, onRemove, onAddTo, height = 560, actions, combineLabel, onMergeClick,
@@ -134,8 +135,15 @@ export default function PipelineGraph({
           data: { label: <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source {n}</span> },
           style: { width: 110, border: 'none', background: 'transparent', padding: 0 } });
       }
-      idxs.forEach((idx, k) => ns.push(stageNode(idx, k * COL, y)));
-      ns.push(addNode(n, idxs.length * COL, y));
+      if (!multi) {
+        // ONE source: top → bottom. A long horizontal chain (≈ COL px per stage) was fitted into the
+        // canvas at ~0.35 zoom and became unreadable (11-17); a column fits at almost full size.
+        idxs.forEach((idx, k) => ns.push(stageNode(idx, 0, k * VROW)));
+        ns.push(addNode(n, 320, Math.max(0, idxs.length - 1) * VROW - 87));
+      } else {
+        idxs.forEach((idx, k) => ns.push(stageNode(idx, k * COL, y)));
+        ns.push(addNode(n, idxs.length * COL, y));
+      }
       chain(idxs.map((i) => `s${i}`));
     });
 
@@ -172,7 +180,7 @@ export default function PipelineGraph({
       endFrom = shared.length ? `s${shared[shared.length - 1]}` : 'merge';
     } else if (laneNums.length) {
       const idxs = lanes.get(laneNums[0])!;
-      endX = (idxs.length + 1) * COL;
+      endX = 20; endY = idxs.length * VROW;
       endFrom = idxs.length ? `s${idxs[idxs.length - 1]}` : null;
     }
     ns.push({ id: 'save', position: pos('save', endX, endY), selectable: !!onSaveClick,
@@ -192,7 +200,10 @@ export default function PipelineGraph({
 
     // Horizontal flow: arcs leave a node on the right and enter on the left (React Flow's
     // default handles are bottom/top, which made every arc loop under and over the nodes).
-    for (const n of ns) { n.sourcePosition = Position.Right; n.targetPosition = Position.Left; }
+    for (const n of ns) {
+      if (multi) { n.sourcePosition = Position.Right; n.targetPosition = Position.Left; }
+      else { n.sourcePosition = Position.Bottom; n.targetPosition = Position.Top; }
+    }
     return { nodes: ns, edges: es };
   }, [pipeline, lookOf, run, selected, moved, onRemove, combineLabel, outputLabel]);
 
