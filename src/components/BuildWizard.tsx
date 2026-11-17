@@ -881,7 +881,7 @@ export default function BuildWizard({
   }, [controlled, onChange, pipeline, yaml]);
 
   const findSpec = (name: string) =>
-    catalog.find((s) => s.stage_name === name || (s.aliases || []).includes(name));
+    (catalog.find((s) => s.stage_name === name) || catalog.find((s) => (s.aliases || []).includes(name)));
 
   /** Fasi coperte e primo buco da colmare — alimenta la guida alla sequenza. */
   const advice = useMemo(

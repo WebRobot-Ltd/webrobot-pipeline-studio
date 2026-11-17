@@ -241,7 +241,7 @@ export function buildYamlFromPipeline(pipeline: PipelineRow[], ctx: YamlContext)
   if (multiSourceActive(pipeline)) return buildSourcesYaml(pipeline, ctx);
 
   const findSpec = (n: string) =>
-    catalog.find((s) => s.stage_name === n || (s.aliases || []).includes(n));
+    (catalog.find((s) => s.stage_name === n) || catalog.find((s) => (s.aliases || []).includes(n)));
   const lines: string[] = [];
 
   const allExts = (ctx.pythonExtensions || [])
@@ -736,7 +736,7 @@ function stageFromObj(s: Record<string, any>, ctx?: YamlContext): PipelineRow | 
   // SOLO gli args con nome, quindi una chiave "0" si perderebbe al primo salvataggio); le mappe
   // (es. load_parquet `{path, selectColumns}`) si fondono per chiave; una lista di azioni sui
   // fetch-like e' la trace incorporata.
-  const spec = (ctx?.catalog || []).find((c) => c.stage_name === stage || (c.aliases || []).includes(stage));
+  const spec = ((ctx?.catalog || []).find((c) => c.stage_name === stage) || (ctx?.catalog || []).find((c) => (c.aliases || []).includes(stage)));
   const names = ((spec && spec.arg_schema) || []).map((a) => a.name);
   const args: Record<string, any> = {};
   let _trace: TraceAction[] | undefined;
@@ -819,7 +819,7 @@ function nameArgs(rows: PipelineRow[], ctx?: YamlContext): PipelineRow[] {
   const catalog = ctx?.catalog || [];
   if (!catalog.length) return rows;
   return rows.map((r) => {
-    const spec = catalog.find((c) => c.stage_name === r.stage || (c.aliases || []).includes(r.stage));
+    const spec = (catalog.find((c) => c.stage_name === r.stage) || catalog.find((c) => (c.aliases || []).includes(r.stage)));
     const names = ((spec && spec.arg_schema) || []).map((a) => a.name);
     if (!names.length || !Object.keys(r.args).some((k) => /^\d+$/.test(k))) return r;
     const args: Record<string, any> = {};
