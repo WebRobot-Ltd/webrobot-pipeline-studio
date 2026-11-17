@@ -19,20 +19,26 @@ export default function DataPreview({ result }: { result: any }) {
   const rows = showAll ? records.slice(0, 100) : records.slice(0, 10);
   const valid = !!result?.valid;
   const count = result?.record_count ?? records.length;
+  // Non-web sources (file, database, open-data API) are checked against the stage catalogue, not
+  // run in the browser: nothing was extracted yet, and that is fine.
+  const structural = valid && result?.mode === 'structural';
+  const good = (valid && count > 0) || structural;
   const filled = (k: string) => records.length ? Math.round(100 * records.filter((r) => r?.[k] != null && String(r[k]).trim() !== '').length / records.length) : 0;
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-white">
-      <div className={`flex flex-wrap items-center gap-2 rounded-t-xl border-b px-4 py-2.5 ${valid && count > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
-        <span className={`inline-flex items-center gap-1.5 text-base font-semibold ${valid && count > 0 ? 'text-emerald-900' : 'text-rose-900'}`}>
-          {valid && count > 0 && <CheckIcon className="h-4 w-4 shrink-0" />}
-          {valid && count > 0 ? `${count} rows extracted` : valid ? 'Ran, but no rows extracted' : 'The pipeline does not work yet'}
+      <div className={`flex flex-wrap items-center gap-2 rounded-t-xl border-b px-4 py-2.5 ${good ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'}`}>
+        <span className={`inline-flex items-center gap-1.5 text-base font-semibold ${good ? 'text-emerald-900' : 'text-rose-900'}`}>
+          {good && <CheckIcon className="h-4 w-4 shrink-0" />}
+          {structural ? 'Pipeline checked — rows appear when it runs'
+            : valid && count > 0 ? `${count} rows extracted` : valid ? 'Ran, but no rows extracted' : 'The pipeline does not work yet'}
         </span>
         {result?.final_url && (
           <a href={result.final_url} target="_blank" rel="noopener noreferrer" className="truncate text-sm text-slate-600 underline">{result.final_url}</a>
         )}
       </div>
 
+      {structural && result?.message && <p className="px-4 pt-3 text-sm leading-relaxed text-slate-700">{result.message}</p>}
       {!valid && result?.error && <p className="px-4 pt-3 text-sm leading-relaxed text-rose-900">{result.error}</p>}
 
       {steps.length > 0 && (
