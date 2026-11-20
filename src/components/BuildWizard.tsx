@@ -45,6 +45,7 @@ import {
   buildYamlFromPipeline,
   parsePipelineFromYaml,
   parseCombineFromYaml,
+  parseMatchFromYaml,
   parseOutputFromYaml,
   type CombineSpec,
   type OutputSpec,
@@ -222,6 +223,7 @@ export default function BuildWizard({
   const [graphFull, setGraphFull] = useState(false);
   // How the sources are combined at the merge point (multi-source): union by default (engine-side).
   const [combine, setCombine] = useState<CombineSpec | null>(null);
+  const [match, setMatch] = useState<Record<string, unknown> | null>(null);
   const [mergeSel, setMergeSel] = useState(false);
   // final dataset written by the run (`output:`); null = parquet · overwrite
   const [output, setOutput] = useState<OutputSpec | null>(null);
@@ -277,6 +279,7 @@ export default function BuildWizard({
       if (!rows.length) { setOpenNote(`Agent ${id}: no pipeline to open here.`); return; }
       setPipeline(rows);
       setCombine(parseCombineFromYaml(y));
+      setMatch(parseMatchFromYaml(y));
       setOutput(parseOutputFromYaml(y));
       const name = String(it.agent_name || it.pipeline_name || `agent ${id}`);
       setAgentsList((l) => (l.some((a) => a.id === id) ? l : [...l, { id, name }]));
@@ -520,9 +523,10 @@ export default function BuildWizard({
       // Any anti-bot row detected by the picker → emit metadata.requires_hitl.
       hitlAwait: pipeline.some((r) => r && r._requires_hitl),
       combine,
+      match,
       output,
     }),
-    [pipeline, catalog, runtime, geo, pyExts, combine, output]);
+    [pipeline, catalog, runtime, geo, pyExts, combine, match, output]);
 
   // ── Proposta dell'assistente ────────────────────────────────────────────────
   // L'assistente non tocca questo stato: scrive una bozza lato server e noi la leggiamo. Cosi' il
@@ -576,6 +580,7 @@ export default function BuildWizard({
     if (!draft) return;
     const rows = parsePipelineFromYaml(draft.pipeline_yaml, { catalog });
     setCombine(parseCombineFromYaml(draft.pipeline_yaml));
+    setMatch(parseMatchFromYaml(draft.pipeline_yaml));
     setOutput(parseOutputFromYaml(draft.pipeline_yaml));
     // Uno YAML che non si riesce a leggere non deve svuotare il canvas ne' bruciare la bozza:
     // si lascia la proposta li' (il diff mostra lo YAML) e si dice perche'.
@@ -897,6 +902,7 @@ export default function BuildWizard({
     lastYaml.current = incoming;
     setPipeline(parsePipelineFromYaml(incoming, { catalog }));
     setCombine(parseCombineFromYaml(incoming));
+    setMatch(parseMatchFromYaml(incoming));
     setOutput(parseOutputFromYaml(incoming));
   }, [controlled, value]);
 

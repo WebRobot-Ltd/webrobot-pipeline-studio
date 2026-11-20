@@ -52,6 +52,8 @@ export interface PipelineRow {
   stage: string;
   args: Record<string, any>;
   _src?: number | 'shared';
+  /** name of the source this row belongs to (`sources:` key), kept so a round-trip does not rename it */
+  _srcLabel?: string;
   _fields?: PipelineField[];
   _markets?: OddsMarket[];
   _trace?: TraceAction[];
@@ -69,6 +71,40 @@ export interface YamlContext {
   combine?: CombineSpec | null;
   /** The final dataset the run writes (`output:`); default parquet · overwrite. */
   output?: OutputSpec | null;
+  /** Top-level `match:` of a multi-source pipeline (key, collect, min_sources…), kept as given. */
+  match?: Record<string, unknown> | null;
+}
+
+/** Read the top-level `match:` block (any form); null when absent. */
+export function parseMatchFromYaml(yaml: string): Record<string, unknown> | null {
+  try {
+    const docs = parseAllDocuments(String(yaml || '')).filter((d) => !d.errors.length).map((d) => d.toJS());
+    for (const d of docs) {
+      const root = d && typeof d === 'object' ? (d.match ? d : (d.spec && d.spec.match ? d.spec : null)) : null;
+      if (root && root.match && typeof root.match === 'object' && !Array.isArray(root.match)) return root.match as Record<string, unknown>;
+    }
+  } catch { /* not YAML */ }
+  return null;
+}
+
+function matchLines(m?: Record<string, unknown> | null): string[] {
+  if (!m || !Object.keys(m).length) return [];
+  const v = (x: unknown): string => Array.isArray(x) ? `[${x.map(v).join(', ')}]` : yamlScalar(x);
+  return [`match: { ${Object.entries(m).map(([k, x]) => `${k}: ${v(x)}`).join(', ')} }`];
+}
+
+/** `sources:` names in order (map keys, or `source:` of the list form). */
+function sourceLabelsFromYaml(text: string): string[] {
+  try {
+    const docs = parseAllDocuments(text).filter((d) => !d.errors.length).map((d) => d.toJS());
+    let root = docs.find((d) => d && typeof d === 'object' && (d.sources || (d.spec && d.spec.sources)));
+    if (!root) return [];
+    if (!root.sources && root.spec) root = root.spec;
+    const src = root.sources;
+    if (Array.isArray(src)) return src.map((b: any, i: number) => String((b && (b.source || b.name)) || `source_${i + 1}`));
+    if (src && typeof src === 'object') return Object.keys(src);
+  } catch { /* not YAML */ }
+  return [];
 }
 
 /** `output:` of the pipeline: what the Spark runner writes at the end (parquet | csv, overwrite | append). */
@@ -191,12 +227,12 @@ function splitBranchesForYaml(pipeline: PipelineRow[]) {
     bySrc.get(k)!.push(row);
   }
   const sources = Array.from(bySrc.keys()).sort((a, b) => a - b)
-    .map((k) => ({ label: 'source_' + k, stages: bySrc.get(k)! }));
+    .map((k) => ({ label: bySrc.get(k)!.find((r) => r._srcLabel)?._srcLabel || 'source_' + k, stages: bySrc.get(k)! }));
   return { sources, tail };
 }
 
 function stripBoundaryFlags(stages: PipelineRow[]): PipelineRow[] {
-  return stages.map((s) => { const c = { ...s }; delete c._src; return c; });
+  return stages.map((s) => { const c = { ...s }; delete c._src; delete c._srcLabel; return c; });
 }
 
 function pipelineSectionLines(yamlStr: string): string[] {
@@ -227,6 +263,7 @@ function buildSourcesYaml(pipeline: PipelineRow[], ctx: YamlContext): string {
       lines.push(l);
   }
   for (const cl of combineLines(ctx.combine)) lines.push(cl);
+  for (const ml of matchLines(ctx.match)) lines.push(ml);
   for (const ol of outputLines(ctx.output)) lines.push(ol);
   const metaLines: string[] = [];
   if (ctx.runtime && ctx.runtime !== 'spark') metaLines.push(`  runtime: ${yamlScalar(ctx.runtime)}`);
@@ -809,9 +846,14 @@ export function parsePipelineFromYaml(yaml: string, ctx?: YamlContext): Pipeline
   // Flow-style mappings in a list (`- - { selector: ".t", as: title }`, what the designer agent writes):
   // the line parser drops them and the stage lands on the canvas with no fields (10-23, Farmaè).
   const flowItems = /^[ \t]*-[ \t]+(?:-[ \t]+)?\{/m.test(text);
-  if (rows.length && !inlineArgs && !flowItems && !rows.some((r) => /^["']/.test(r.stage))) return nameArgs(rows, ctx);
-  const structured = parseStructured(text, ctx);
-  return structured.length ? structured : nameArgs(rows, ctx);
+  const out = (rows.length && !inlineArgs && !flowItems && !rows.some((r) => /^["']/.test(r.stage)))
+    ? nameArgs(rows, ctx)
+    : (() => { const structured = parseStructured(text, ctx); return structured.length ? structured : nameArgs(rows, ctx); })();
+  // Keep the sources' names (vino, callmewine…): they become the `source` column of the run.
+  const labels = sourceLabelsFromYaml(text);
+  return labels.length
+    ? out.map((r) => (typeof r._src === 'number' && labels[r._src - 1] ? { ...r, _srcLabel: labels[r._src - 1] } : r))
+    : out;
 }
 
 /** Posizionali senza commento `# name` ("0", "1"…) → nome dall'arg_schema, se il catalogo c'e'. */
